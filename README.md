@@ -1,5 +1,7 @@
 # YouTube Transcript Tool (ytt)
 
+**한국어** | [English](README.en.md) | [中文](README.zh.md)
+
 YouTube 영상을 자동으로 전사하고 요약하는 CLI 도구입니다.
 
 ## 주요 특징
