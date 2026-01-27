@@ -102,7 +102,7 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 ### 基本使用
 
 ```bash
-# 仅转录
+# 仅转录（自动检测语言）
 ytt "https://youtube.com/watch?v=xxx" ./output
 
 # 转录 + 摘要
@@ -111,10 +111,10 @@ ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 # 指定模型大小（tiny/base/small/medium/large）
 ytt "https://youtube.com/watch?v=xxx" ./output -m medium
 
-# 指定语言（韩语）
+# 手动指定语言（韩语）
 ytt "https://youtube.com/watch?v=xxx" ./output -l ko --summarize
 
-# 英语摘要
+# 英语视频 + 英语摘要
 ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
 ```
 
@@ -140,7 +140,7 @@ ytt --help
 - `--summarize, -s`: 转录时一并生成摘要
 - `--summarize-only`: 仅从现有转录生成摘要
 - `--model-size, -m`: Whisper 模型大小（默认：base）
-- `--language, -l`: 语言规范（默认：ko）
+- `--language, -l`: 语言规范（默认：auto - 自动检测）
 - `--no-cleanup`: 不删除临时文件
 - `--verbose, -v`: 详细日志输出
 

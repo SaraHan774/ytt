@@ -102,7 +102,7 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 ### 기본 사용법
 
 ```bash
-# 전사만 생성
+# 전사만 생성 (언어 자동 감지)
 ytt "https://youtube.com/watch?v=xxx" ./output
 
 # 전사 + 요약
@@ -111,10 +111,10 @@ ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 # 모델 크기 지정 (tiny/base/small/medium/large)
 ytt "https://youtube.com/watch?v=xxx" ./output -m medium
 
-# 언어 지정 (한국어)
+# 언어 수동 지정 (한국어)
 ytt "https://youtube.com/watch?v=xxx" ./output -l ko --summarize
 
-# 영어 요약
+# 영어 영상 + 영어 요약
 ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
 ```
 
@@ -140,7 +140,7 @@ ytt --help
 - `--summarize, -s`: 요약도 함께 생성
 - `--summarize-only`: 기존 transcript로 요약만 생성
 - `--model-size, -m`: Whisper 모델 크기 (기본값: base)
-- `--language, -l`: 언어 지정 (기본값: ko)
+- `--language, -l`: 언어 지정 (기본값: auto - 자동 감지)
 - `--no-cleanup`: 임시 파일 삭제하지 않음
 - `--verbose, -v`: 상세 로그 출력
 

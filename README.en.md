@@ -102,7 +102,7 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 ### Basic Usage
 
 ```bash
-# Transcription only
+# Transcription only (auto-detect language)
 ytt "https://youtube.com/watch?v=xxx" ./output
 
 # Transcription + Summary
@@ -111,10 +111,10 @@ ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 # Specify model size (tiny/base/small/medium/large)
 ytt "https://youtube.com/watch?v=xxx" ./output -m medium
 
-# Specify language (Korean)
+# Manually specify language (Korean)
 ytt "https://youtube.com/watch?v=xxx" ./output -l ko --summarize
 
-# English summary
+# English video + English summary
 ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
 ```
 
@@ -140,7 +140,7 @@ ytt --help
 - `--summarize, -s`: Generate summary along with transcription
 - `--summarize-only`: Generate summary only from existing transcript
 - `--model-size, -m`: Whisper model size (default: base)
-- `--language, -l`: Language specification (default: ko)
+- `--language, -l`: Language specification (default: auto - auto-detect)
 - `--no-cleanup`: Don't delete temporary files
 - `--verbose, -v`: Verbose logging output
 
