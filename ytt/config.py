@@ -95,7 +95,8 @@ def get_config() -> dict:
 def get_default_config() -> dict:
     """기본 설정 반환"""
     return {
-        'default_language': 'ko',
+        'language': 'ko',  # CLI 언어 (ko, en, zh)
+        'default_language': 'ko',  # 요약 언어
         'default_model_size': 'base',
         'auto_summarize': False,
     }
