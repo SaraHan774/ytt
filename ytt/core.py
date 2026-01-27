@@ -338,9 +338,9 @@ def summarize_with_claude(
             'chunk': "You are a helpful assistant that summarizes YouTube videos. Summarize the provided audio transcript chunk into clear bullet points.",
             'final': "Summarize the key points into 1-2 sentences that capture the essence."
         },
-        'ja': {
-            'chunk': "あなたはYouTube動画を要約する役立つアシスタントです。提供された音声トランスクリプトを明確な箇条書きで要約してください。必ず日本語で回答してください。",
-            'final': "重要なポイントを1〜2文で要約してください。必ず日本語で回答してください。"
+        'zh': {
+            'chunk': "你是一个帮助总结YouTube视频的助手。请将提供的音频转录内容总结为清晰的要点。请务必用中文回答。",
+            'final': "请用1-2句话总结关键要点。请务必用中文回答。"
         }
     }
 

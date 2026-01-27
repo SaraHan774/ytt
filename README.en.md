@@ -9,7 +9,7 @@ A CLI tool for automatically transcribing and summarizing YouTube videos.
 - 🆓 **Completely Free Transcription**: Uses local Whisper models (no API costs)
 - 🚀 **GPU Acceleration**: 5-10x faster processing with faster-whisper
 - 🤖 **Latest Claude Sonnet 4.5**: High-quality summarization
-- 🌍 **Multi-language Support**: Korean, English, and Japanese summaries
+- 🌍 **Multi-language Support**: Korean, English, and Chinese summaries
 - 💻 **CLI Interface**: Simple command-line usage
 - ⚡ **Summary-only Mode**: Quickly regenerate summaries from existing transcripts
 
@@ -75,7 +75,7 @@ ytt-init --reset
 **Setup wizard configures:**
 - ✅ System environment check (ffmpeg, GPU, etc.)
 - 🔑 Anthropic API key setup
-- 🌍 Default language selection (Korean/English/Japanese)
+- 🌍 Default language selection (Korean/English/Chinese)
 - 🎤 Default Whisper model size
 - ⚙️ Auto-summarize activation
 

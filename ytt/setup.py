@@ -158,7 +158,7 @@ def setup_defaults() -> dict:
     console.print(f"[dim]{t('setup.defaults.language_description')}[/dim]")
     default_language = Prompt.ask(
         t('setup.defaults.language_prompt'),
-        choices=["ko", "en", "ja"],
+        choices=["ko", "en", "zh"],
         default="ko"
     )
 
