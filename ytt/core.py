@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Dict
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 
 import librosa
@@ -80,11 +81,11 @@ def download_youtube(youtube_url: str, output_dir: Path) -> Dict[str, any]:
     raw_audio_dir.mkdir(parents=True, exist_ok=True)
 
     ydl_config = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[abr<=96]/bestaudio/best",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
-            "preferredquality": "192",
+            "preferredquality": "96",
         }],
         "outtmpl": str(raw_audio_dir / "%(title)s.%(ext)s"),
         "quiet": not logger.isEnabledFor(logging.DEBUG),
@@ -160,13 +161,53 @@ def chunk_audio(audio_path: Path, output_dir: Path, segment_length: int = 600) -
     return sorted(chunk_files)
 
 
+def _transcribe_single_chunk(args):
+    """단일 청크 전사 (병렬 처리용 헬퍼 함수)"""
+    i, audio_file, model_size, language = args
+
+    try:
+        # 각 스레드에서 모델 가져오기
+        model = get_whisper_model(model_size)
+
+        logger.info(f"Transcribing chunk {i+1}: {audio_file.name}")
+
+        segments, info = model.transcribe(
+            str(audio_file),
+            language=language,
+            beam_size=5,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500)
+        )
+
+        chunk_data = {
+            'chunk_id': i,
+            'file': audio_file.name,
+            'language': info.language,
+            'segments': []
+        }
+
+        for seg in segments:
+            chunk_data['segments'].append({
+                'start': seg.start,
+                'end': seg.end,
+                'text': seg.text.strip()
+            })
+
+        logger.debug(f"Chunk {i+1}: {len(chunk_data['segments'])} segments")
+        return chunk_data
+
+    except Exception as e:
+        logger.error(f"Transcription failed for {audio_file}: {e}")
+        return None
+
+
 def transcribe_audio(
     audio_files: List[Path],
     model_size: str = "base",
     language: Optional[str] = "ko"
 ) -> List[Dict]:
     """
-    오디오 파일들을 전사
+    오디오 파일들을 병렬로 전사
 
     Args:
         audio_files: 오디오 파일 경로 리스트
@@ -176,44 +217,34 @@ def transcribe_audio(
     Returns:
         List[Dict]: 전사 결과 (세그먼트 정보 포함)
     """
-    logger.info(f"Transcribing {len(audio_files)} files with model: {model_size}")
+    logger.info(f"Transcribing {len(audio_files)} files with model: {model_size} (parallel mode)")
 
-    model = get_whisper_model(model_size)
+    # 병렬 처리를 위한 인자 준비
+    tasks = [(i, audio_file, model_size, language)
+             for i, audio_file in enumerate(audio_files)]
+
     transcripts = []
 
-    for i, audio_file in enumerate(audio_files):
-        logger.info(f"Transcribing chunk {i+1}/{len(audio_files)}: {audio_file.name}")
+    # ThreadPoolExecutor로 병렬 처리 (최대 4개 동시)
+    max_workers = min(4, len(audio_files))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 작업 제출
+        future_to_idx = {executor.submit(_transcribe_single_chunk, task): task[0]
+                         for task in tasks}
 
-        try:
-            segments, info = model.transcribe(
-                str(audio_file),
-                language=language,
-                beam_size=5,
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500)
-            )
+        # 완료된 순서대로 결과 수집
+        results = {}
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                result = future.result()
+                if result is not None:
+                    results[idx] = result
+            except Exception as e:
+                logger.error(f"Task for chunk {idx} raised exception: {e}")
 
-            chunk_data = {
-                'chunk_id': i,
-                'file': audio_file.name,
-                'language': info.language,
-                'segments': []
-            }
-
-            for seg in segments:
-                chunk_data['segments'].append({
-                    'start': seg.start,
-                    'end': seg.end,
-                    'text': seg.text.strip()
-                })
-
-            transcripts.append(chunk_data)
-            logger.debug(f"Chunk {i+1}: {len(chunk_data['segments'])} segments")
-
-        except Exception as e:
-            logger.error(f"Transcription failed for {audio_file}: {e}")
-            # 실패해도 계속 진행
-            continue
+        # chunk_id 순서대로 정렬
+        transcripts = [results[i] for i in sorted(results.keys())]
 
     logger.info(f"Transcription complete: {len(transcripts)} chunks")
     return transcripts
