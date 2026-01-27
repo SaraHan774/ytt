@@ -7,7 +7,7 @@
   "setup.system_check.ffmpeg_installed": "✓ 已安装",
   "setup.system_check.ffmpeg_required": "✗ 需要安装",
   "setup.api_key.title": "🔑 Anthropic API 密钥设置",
-  "setup.api_key.current": "当前 API 密钥: {key}...",
+  "setup.api_key.current": "当前 API 密钥: {api_key}...",
   "setup.api_key.change": "您要更改 API 密钥吗？",
   "setup.api_key.description": "Anthropic API 密钥是摘要功能所必需的。",
   "setup.api_key.skip": "按 Enter 键稍后设置。",

@@ -119,7 +119,7 @@ def setup_api_key() -> Optional[str]:
     # 기존 API 키 확인
     existing_key = config.get_api_key()
     if existing_key:
-        console.print(f"[dim]{t('setup.api_key.current', key=existing_key[:20])}[/dim]")
+        console.print(f"[dim]{t('setup.api_key.current', api_key=existing_key[:20])}[/dim]")
         if not Confirm.ask(t('setup.api_key.change'), default=False):
             return existing_key
 

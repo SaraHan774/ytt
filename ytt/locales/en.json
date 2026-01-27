@@ -7,7 +7,7 @@
   "setup.system_check.ffmpeg_installed": "✓ Installed",
   "setup.system_check.ffmpeg_required": "✗ Installation Required",
   "setup.api_key.title": "🔑 Anthropic API Key Setup",
-  "setup.api_key.current": "Current API key: {key}...",
+  "setup.api_key.current": "Current API key: {api_key}...",
   "setup.api_key.change": "Would you like to change the API key?",
   "setup.api_key.description": "Anthropic API key is required for summarization features.",
   "setup.api_key.skip": "Press Enter to set up later.",

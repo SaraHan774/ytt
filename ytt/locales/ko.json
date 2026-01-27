@@ -7,7 +7,7 @@
   "setup.system_check.ffmpeg_installed": "✓ 설치됨",
   "setup.system_check.ffmpeg_required": "✗ 설치 필요",
   "setup.api_key.title": "🔑 Anthropic API 키 설정",
-  "setup.api_key.current": "현재 API 키: {key}...",
+  "setup.api_key.current": "현재 API 키: {api_key}...",
   "setup.api_key.change": "API 키를 변경하시겠습니까?",
   "setup.api_key.description": "Anthropic API 키는 요약 기능에 필요합니다.",
   "setup.api_key.skip": "나중에 설정하려면 Enter를 누르세요.",
