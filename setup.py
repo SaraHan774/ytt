@@ -16,7 +16,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Your Name",
     author_email="your.email@example.com",
-    url="https://github.com/yourusername/ytt",
+    url="https://github.com/SaraHan774/ytt",
     packages=find_packages(),
     install_requires=[
         "faster-whisper>=0.10.0",
@@ -60,7 +60,7 @@ setup(
     ],
     keywords="youtube transcript transcription whisper claude ai video audio",
     project_urls={
-        "Bug Reports": "https://github.com/yourusername/ytt/issues",
-        "Source": "https://github.com/yourusername/ytt",
+        "Bug Reports": "https://github.com/SaraHan774/ytt/issues",
+        "Source": "https://github.com/SaraHan774/ytt",
     },
 )

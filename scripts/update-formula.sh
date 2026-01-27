@@ -4,13 +4,13 @@ set -e
 # YouTube Transcript Tool - Formula 업데이트 스크립트
 
 VERSION=$1
-GITHUB_USER="${2:-yourusername}"
+GITHUB_USER="${2:-SaraHan774}"
 REPO="ytt"
 TAP_REPO="homebrew-${REPO}"
 
 if [ -z "$VERSION" ]; then
   echo "Usage: $0 <version> [github_user]"
-  echo "Example: $0 1.0.1 yourusername"
+  echo "Example: $0 1.0.1 SaraHan774"
   exit 1
 fi
 

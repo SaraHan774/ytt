@@ -2,11 +2,11 @@ class Ytt < Formula
   include Language::Python::Virtualenv
 
   desc "YouTube Transcript Tool - AI-powered video transcription and summarization"
-  homepage "https://github.com/yourusername/ytt"
-  url "https://github.com/yourusername/ytt/archive/refs/tags/v1.0.0.tar.gz"
+  homepage "https://github.com/SaraHan774/ytt"
+  url "https://github.com/SaraHan774/ytt/archive/refs/tags/v1.0.0.tar.gz"
   sha256 "YOUR_SHA256_CHECKSUM_HERE"
   license "MIT"
-  head "https://github.com/yourusername/ytt.git", branch: "main"
+  head "https://github.com/SaraHan774/ytt.git", branch: "main"
 
   depends_on "ffmpeg"
   depends_on "python@3.11"
@@ -85,7 +85,7 @@ class Ytt < Formula
         $ ytt-init --help
         $ ytt-config --help
 
-      Documentation: https://github.com/yourusername/ytt
+      Documentation: https://github.com/SaraHan774/ytt
     EOS
   end
 

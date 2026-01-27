@@ -6,7 +6,7 @@
 
 ```bash
 # 저장소 클론
-git clone https://github.com/yourusername/ytt.git
+git clone https://github.com/SaraHan774/ytt.git
 cd ytt
 
 # 패키지 설치 (개발 모드)

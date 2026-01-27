@@ -202,7 +202,7 @@ def display_quickstart():
     console.print("  [cyan]ytt --help[/cyan]")
     console.print()
 
-    console.print("[dim]문서: https://github.com/yourusername/ytt[/dim]")
+    console.print("[dim]문서: https://github.com/SaraHan774/ytt[/dim]")
     console.print()
 
 

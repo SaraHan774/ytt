@@ -363,7 +363,7 @@ setup(
     description='YouTube Transcript Tool - AI-powered video transcription',
     author='Your Name',
     author_email='your.email@example.com',
-    url='https://github.com/yourusername/ytt',
+    url='https://github.com/SaraHan774/ytt',
     packages=find_packages(),
     install_requires=[
         'faster-whisper>=0.10.0',
@@ -401,8 +401,8 @@ class Ytt < Formula
   include Language::Python::Virtualenv
 
   desc "YouTube Transcript Tool - AI-powered video transcription"
-  homepage "https://github.com/yourusername/ytt"
-  url "https://github.com/yourusername/ytt/archive/v1.0.0.tar.gz"
+  homepage "https://github.com/SaraHan774/ytt"
+  url "https://github.com/SaraHan774/ytt/archive/v1.0.0.tar.gz"
   sha256 "YOUR_SHA256_HERE"
   license "MIT"
 
@@ -430,7 +430,7 @@ end
 
 ```bash
 # 설치 (Homebrew)
-brew tap yourusername/tap
+brew tap SaraHan774/tap
 brew install ytt
 
 # API 키 설정 (최초 1회)

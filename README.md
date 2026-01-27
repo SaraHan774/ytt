@@ -19,7 +19,7 @@ YouTube 영상을 자동으로 전사하고 요약하는 CLI 도구입니다.
 
 ```bash
 # Tap 추가
-brew tap yourusername/ytt
+brew tap SaraHan774/ytt
 
 # 설치 (ffmpeg 자동 설치됨)
 brew install ytt

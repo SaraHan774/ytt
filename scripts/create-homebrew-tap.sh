@@ -3,7 +3,7 @@ set -e
 
 # YouTube Transcript Tool - Homebrew Tap 생성 스크립트
 
-GITHUB_USER="${1:-yourusername}"
+GITHUB_USER="${1:-SaraHan774}"
 REPO_NAME="ytt"
 TAP_REPO="homebrew-${REPO_NAME}"
 
@@ -55,7 +55,7 @@ if [ -f "Formula/ytt.rb" ]; then
     cp "Formula/ytt.rb" "${TAP_REPO}/Formula/"
 
     # GitHub 사용자명 업데이트
-    sed -i.bak "s/yourusername/${GITHUB_USER}/g" "${TAP_REPO}/Formula/ytt.rb"
+    sed -i.bak "s/SaraHan774/${GITHUB_USER}/g" "${TAP_REPO}/Formula/ytt.rb"
     rm "${TAP_REPO}/Formula/ytt.rb.bak"
 
     echo "✓ Formula copied and updated"

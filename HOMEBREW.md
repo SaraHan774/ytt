@@ -15,7 +15,7 @@ git add .
 git commit -m "Initial commit"
 
 # GitHub 저장소 연결
-git remote add origin https://github.com/yourusername/ytt.git
+git remote add origin https://github.com/SaraHan774/ytt.git
 git push -u origin main
 ```
 
@@ -57,7 +57,7 @@ gh release create v1.0.0 \
 
 ```bash
 # 릴리스 tarball 다운로드
-curl -L https://github.com/yourusername/ytt/archive/refs/tags/v1.0.0.tar.gz -o ytt-1.0.0.tar.gz
+curl -L https://github.com/SaraHan774/ytt/archive/refs/tags/v1.0.0.tar.gz -o ytt-1.0.0.tar.gz
 
 # SHA256 계산
 shasum -a 256 ytt-1.0.0.tar.gz
@@ -73,8 +73,8 @@ shasum -a 256 ytt-1.0.0.tar.gz
 ```ruby
 class Ytt < Formula
   desc "YouTube Transcript Tool - AI-powered video transcription"
-  homepage "https://github.com/yourusername/ytt"
-  url "https://github.com/yourusername/ytt/archive/refs/tags/v1.0.0.tar.gz"
+  homepage "https://github.com/SaraHan774/ytt"
+  url "https://github.com/SaraHan774/ytt/archive/refs/tags/v1.0.0.tar.gz"
   sha256 "YOUR_ACTUAL_SHA256_HERE"  # 위에서 계산한 값 입력
   license "MIT"
   # ...
@@ -92,10 +92,10 @@ end
 ```bash
 # 1. Tap 저장소 생성 (GitHub에서)
 # 저장소 이름: homebrew-ytt
-# URL: https://github.com/yourusername/homebrew-ytt
+# URL: https://github.com/SaraHan774/homebrew-ytt
 
 # 2. 로컬에 클론
-git clone https://github.com/yourusername/homebrew-ytt.git
+git clone https://github.com/SaraHan774/homebrew-ytt.git
 cd homebrew-ytt
 
 # 3. Formula 디렉토리 생성
@@ -116,7 +116,7 @@ git push origin main
 #!/bin/bash
 # create-homebrew-tap.sh
 
-GITHUB_USER="yourusername"
+GITHUB_USER="SaraHan774"
 REPO_NAME="ytt"
 TAP_REPO="homebrew-${REPO_NAME}"
 
@@ -151,13 +151,13 @@ echo "✓ Tap 생성 완료: ${GITHUB_USER}/${TAP_REPO}"
 
 ```bash
 # Tap 추가
-brew tap yourusername/ytt
+brew tap SaraHan774/ytt
 
 # 설치
 brew install ytt
 
 # 또는 한 줄로
-brew install yourusername/ytt/ytt
+brew install SaraHan774/ytt/ytt
 ```
 
 ### 설치 후 사용
@@ -181,7 +181,7 @@ ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 # update-formula.sh
 
 VERSION=$1
-GITHUB_USER="yourusername"
+GITHUB_USER="SaraHan774"
 REPO="ytt"
 
 if [ -z "$VERSION" ]; then
@@ -244,7 +244,7 @@ chmod +x update-formula.sh
 brew update
 
 # 2. Formula 생성
-brew create https://github.com/yourusername/ytt/archive/refs/tags/v1.0.0.tar.gz
+brew create https://github.com/SaraHan774/ytt/archive/refs/tags/v1.0.0.tar.gz
 
 # 3. Formula 편집
 brew edit ytt
@@ -274,10 +274,10 @@ Formula가 제대로 작동하는지 테스트:
 
 ```bash
 # 1. Tap 제거 (깨끗한 상태에서 테스트)
-brew untap yourusername/ytt
+brew untap SaraHan774/ytt
 
 # 2. 재설치
-brew tap yourusername/ytt
+brew tap SaraHan774/ytt
 brew install ytt
 
 # 3. 명령어 테스트
@@ -287,7 +287,7 @@ ytt-config show-config
 
 # 4. 제거 테스트
 brew uninstall ytt
-brew untap yourusername/ytt
+brew untap SaraHan774/ytt
 ```
 
 ---
@@ -347,7 +347,7 @@ jobs:
 
 ```bash
 # Tap 추가
-brew tap yourusername/ytt
+brew tap SaraHan774/ytt
 
 # 설치
 brew install ytt
