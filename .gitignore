@@ -86,3 +86,6 @@ htmlcov/
 # API keys (backup)
 api_key.txt
 config/api_key.txt
+
+# Internal planning documents
+OPTIMIZATION_ROADMAP.md
