@@ -1,0 +1,67 @@
+name: Release and Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-homebrew-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Calculate tarball SHA256
+        id: sha256
+        run: |
+          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz"
+          echo "Downloading: $TARBALL_URL"
+          SHA256=$(curl -sL "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA256"
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/homebrew-ytt
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update Formula
+        run: |
+          cd homebrew-tap
+          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz"
+
+          # Update URL and SHA256
+          sed -i 's|url ".*"|url "'"$TARBALL_URL"'"|g' Formula/ytt.rb
+          sed -i 's|sha256 ".*"|sha256 "'"${{ steps.sha256.outputs.sha256 }}"'"|g' Formula/ytt.rb
+
+          # Show changes
+          git diff Formula/ytt.rb
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/ytt.rb
+          git commit -m "Update ytt to v${{ steps.version.outputs.version }}"
+          git push
+
+      - name: Create PR for Homebrew Core (optional)
+        if: github.event.release.prerelease == false
+        run: |
+          echo "To submit to Homebrew Core:"
+          echo "1. Fork https://github.com/Homebrew/homebrew-core"
+          echo "2. Copy Formula/ytt.rb to Formula/"
+          echo "3. Run: brew install --build-from-source ytt"
+          echo "4. Run: brew test ytt"
+          echo "5. Run: brew audit --strict ytt"
+          echo "6. Create PR to Homebrew/homebrew-core"

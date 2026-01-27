@@ -1,0 +1,19 @@
+# YouTube Transcript Tool - Requirements
+
+# Core dependencies
+faster-whisper>=0.10.0
+anthropic>=0.18.0
+yt-dlp>=2023.0.0
+librosa>=0.10.0
+soundfile>=0.12.0
+python-dotenv>=1.0.0
+
+# CLI dependencies
+click>=8.1.0
+rich>=13.0.0
+
+# Test dependencies (optional)
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+responses>=0.23.0
