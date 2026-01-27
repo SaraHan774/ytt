@@ -269,7 +269,7 @@ ytt "URL" ./output -m tiny
 
 ## License
 
-MIT License
+Apache License 2.0
 
 ---
 
