@@ -47,8 +47,8 @@ def setup_logging(verbose: bool):
 )
 @click.option(
     '--language', '-l',
-    default='ko',
-    help='언어 지정 (ko/en/ja/auto 등, default: ko)'
+    default='auto',
+    help='언어 지정 (ko/en/ja/auto 등, default: auto)'
 )
 @click.option(
     '--no-cleanup',
@@ -60,7 +60,7 @@ def setup_logging(verbose: bool):
     is_flag=True,
     help='상세 로그 출력'
 )
-@click.version_option(version='1.0.0', prog_name='ytt')
+@click.version_option(version='1.0.2', prog_name='ytt')
 def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, language, no_cleanup, verbose):
     """
     YouTube Transcript Tool (ytt)
