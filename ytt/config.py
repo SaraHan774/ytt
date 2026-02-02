@@ -99,6 +99,16 @@ def get_default_config() -> dict:
         'default_language': 'ko',  # 요약 언어
         'default_model_size': 'base',
         'auto_summarize': False,
+        # 성능 최적화 설정
+        'performance': {
+            'use_ffmpeg_chunking': True,    # ffmpeg 자동 감지 및 사용
+            'enable_prompt_caching': True,   # 프롬프트 캐싱 활성화
+            'vad_config': {
+                'min_silence_duration_ms': 300,  # aggressive (더 빠른 전사)
+                'speech_pad_ms': 200,            # speech 세그먼트 패딩
+                'threshold': 0.5                 # 음성 감지 임계값
+            }
+        }
     }
 
 

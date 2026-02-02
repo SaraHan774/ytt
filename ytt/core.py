@@ -5,6 +5,7 @@ Streamlit 의존성 없이 핵심 기능만 제공
 import os
 import shutil
 import logging
+import subprocess
 from pathlib import Path
 from typing import List, Optional, Dict
 from functools import lru_cache
@@ -136,9 +137,81 @@ def download_youtube(youtube_url: str, output_dir: Path) -> Dict[str, any]:
         raise
 
 
-def chunk_audio(audio_path: Path, output_dir: Path, segment_length: int = 600) -> List[Path]:
+def chunk_audio_with_ffmpeg(audio_path: Path, output_dir: Path, segment_length: int = 600) -> Optional[List[Path]]:
     """
-    오디오를 세그먼트로 분할
+    ffmpeg를 사용한 메모리 효율적 청킹 (재인코딩 없이 복사만)
+
+    Args:
+        audio_path: 원본 오디오 파일 경로
+        output_dir: 청크 저장 디렉토리
+        segment_length: 세그먼트 길이 (초)
+
+    Returns:
+        List[Path]: 청크 파일 경로 리스트 (실패 시 None)
+    """
+    ffmpeg_path = shutil.which('ffmpeg')
+    ffprobe_path = shutil.which('ffprobe')
+
+    if not ffmpeg_path or not ffprobe_path:
+        logger.debug("ffmpeg/ffprobe not found, falling back to librosa")
+        return None
+
+    logger.info(f"Chunking audio with ffmpeg: {audio_path.name}")
+
+    chunks_dir = output_dir / "chunks"
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # ffprobe로 duration 확인
+        probe_cmd = [
+            ffprobe_path,
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            str(audio_path)
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+        duration = float(result.stdout.strip())
+        num_segments = int(duration / segment_length) + 1
+
+        logger.info(f"Duration: {duration:.1f}s, creating {num_segments} chunks with ffmpeg")
+
+        # ffmpeg segment muxer로 청킹 (재인코딩 없이 복사만)
+        segment_cmd = [
+            ffmpeg_path,
+            '-i', str(audio_path),
+            '-f', 'segment',
+            '-segment_time', str(segment_length),
+            '-c', 'copy',  # 핵심: 재인코딩 없음 (zero-copy)
+            '-reset_timestamps', '1',
+            str(chunks_dir / 'segment_%03d.mp3')
+        ]
+
+        subprocess.run(
+            segment_cmd,
+            capture_output=True,
+            check=True,
+            stderr=subprocess.DEVNULL if not logger.isEnabledFor(logging.DEBUG) else None
+        )
+
+        # 생성된 청크 파일 수집
+        chunk_files = sorted(chunks_dir.glob("segment_*.mp3"))
+
+        logger.info(f"Created {len(chunk_files)} chunks with ffmpeg (zero-copy)")
+        return chunk_files
+
+    except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
+        logger.warning(f"ffmpeg chunking failed ({e}), falling back to librosa")
+        # 실패한 파일 정리
+        if chunks_dir.exists():
+            shutil.rmtree(chunks_dir)
+            chunks_dir.mkdir(parents=True, exist_ok=True)
+        return None
+
+
+def chunk_audio_librosa(audio_path: Path, output_dir: Path, segment_length: int = 600) -> List[Path]:
+    """
+    librosa를 사용한 오디오 청킹 (fallback 방식)
 
     Args:
         audio_path: 원본 오디오 파일 경로
@@ -148,7 +221,7 @@ def chunk_audio(audio_path: Path, output_dir: Path, segment_length: int = 600) -
     Returns:
         List[Path]: 청크 파일 경로 리스트
     """
-    logger.info(f"Chunking audio: {audio_path.name}")
+    logger.info(f"Chunking audio with librosa: {audio_path.name}")
 
     chunks_dir = output_dir / "chunks"
     chunks_dir.mkdir(parents=True, exist_ok=True)
@@ -170,13 +243,39 @@ def chunk_audio(audio_path: Path, output_dir: Path, segment_length: int = 600) -
         sf.write(chunk_path, segment, sr)
         chunk_files.append(chunk_path)
 
-    logger.info(f"Created {len(chunk_files)} chunks")
+    logger.info(f"Created {len(chunk_files)} chunks with librosa")
     return sorted(chunk_files)
+
+
+def chunk_audio(audio_path: Path, output_dir: Path, segment_length: int = 600, force_librosa: bool = False) -> List[Path]:
+    """
+    오디오를 세그먼트로 분할 (자동으로 ffmpeg 시도, 실패 시 librosa)
+
+    Args:
+        audio_path: 원본 오디오 파일 경로
+        output_dir: 청크 저장 디렉토리
+        segment_length: 세그먼트 길이 (초)
+        force_librosa: True면 ffmpeg 건너뛰고 librosa 사용
+
+    Returns:
+        List[Path]: 청크 파일 경로 리스트
+    """
+    if force_librosa:
+        return chunk_audio_librosa(audio_path, output_dir, segment_length)
+
+    # ffmpeg 시도
+    result = chunk_audio_with_ffmpeg(audio_path, output_dir, segment_length)
+
+    # 실패 시 librosa fallback
+    if result is None:
+        return chunk_audio_librosa(audio_path, output_dir, segment_length)
+
+    return result
 
 
 def _transcribe_single_chunk(args):
     """단일 청크 전사 (병렬 처리용 헬퍼 함수)"""
-    i, audio_file, model_size, language = args
+    i, audio_file, model_size, language, vad_config = args
 
     try:
         # 각 스레드에서 모델 가져오기
@@ -184,12 +283,16 @@ def _transcribe_single_chunk(args):
 
         logger.info(f"Transcribing chunk {i+1}: {audio_file.name}")
 
+        # VAD 파라미터 설정 (기본값 또는 사용자 지정)
+        if vad_config is None:
+            vad_config = dict(min_silence_duration_ms=500)  # 기본값 (conservative)
+
         segments, info = model.transcribe(
             str(audio_file),
             language=language,
             beam_size=5,
             vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500)
+            vad_parameters=vad_config
         )
 
         chunk_data = {
@@ -217,7 +320,8 @@ def _transcribe_single_chunk(args):
 def transcribe_audio(
     audio_files: List[Path],
     model_size: str = "base",
-    language: Optional[str] = "ko"
+    language: Optional[str] = "ko",
+    vad_config: Optional[Dict] = None
 ) -> List[Dict]:
     """
     오디오 파일들을 병렬로 전사
@@ -226,6 +330,7 @@ def transcribe_audio(
         audio_files: 오디오 파일 경로 리스트
         model_size: Whisper 모델 크기
         language: 언어 코드 (None이면 자동 감지)
+        vad_config: VAD 파라미터 (None이면 기본값 사용)
 
     Returns:
         List[Dict]: 전사 결과 (세그먼트 정보 포함)
@@ -233,7 +338,7 @@ def transcribe_audio(
     logger.info(f"Transcribing {len(audio_files)} files with model: {model_size} (parallel mode)")
 
     # 병렬 처리를 위한 인자 준비
-    tasks = [(i, audio_file, model_size, language)
+    tasks = [(i, audio_file, model_size, language, vad_config)
              for i, audio_file in enumerate(audio_files)]
 
     transcripts = []
@@ -313,16 +418,18 @@ def summarize_with_claude(
     transcripts: List[Dict],
     api_key: Optional[str] = None,
     model: str = "claude-sonnet-4-5-20250929",
-    language: str = "ko"
+    language: str = "ko",
+    enable_caching: bool = True
 ) -> Dict[str, str]:
     """
-    전사 결과를 Claude로 요약
+    전사 결과를 Claude로 요약 (Prompt Caching 지원)
 
     Args:
         transcripts: 전사 결과 리스트
         api_key: Anthropic API 키
         model: Claude 모델명
         language: 요약 언어 ('ko', 'en', 'ja' 등)
+        enable_caching: Prompt Caching 활성화 여부 (기본: True)
 
     Returns:
         dict: {
@@ -330,7 +437,7 @@ def summarize_with_claude(
             'short_summary': str
         }
     """
-    logger.info(f"Generating summary with Claude (language: {language})")
+    logger.info(f"Generating summary with Claude (language: {language}, caching: {enable_caching})")
 
     # API 키 확인
     if not api_key:
@@ -362,8 +469,26 @@ def summarize_with_claude(
         language = 'ko'
         logger.warning(f"Unsupported language, defaulting to Korean")
 
-    chunk_prompt = prompts[language]['chunk']
-    final_prompt = prompts[language]['final']
+    chunk_prompt_text = prompts[language]['chunk']
+    final_prompt_text = prompts[language]['final']
+
+    # Prompt Caching 설정 (enable_caching이 True이고 시스템 프롬프트가 충분히 길 때만)
+    if enable_caching and len(chunk_prompt_text) >= 1024:
+        # 구조화된 시스템 프롬프트 with cache_control
+        chunk_system_prompt = [{
+            "type": "text",
+            "text": chunk_prompt_text,
+            "cache_control": {"type": "ephemeral"}
+        }]
+        final_system_prompt = [{
+            "type": "text",
+            "text": final_prompt_text,
+            "cache_control": {"type": "ephemeral"}
+        }]
+    else:
+        # 캐싱 없이 plain string
+        chunk_system_prompt = chunk_prompt_text
+        final_system_prompt = final_prompt_text
 
     # 전체 텍스트 결합
     full_text = ""
@@ -375,6 +500,7 @@ def summarize_with_claude(
 
     # 청크별 요약
     chunk_summaries = []
+    cache_hits = 0
     for i, chunk in enumerate(transcripts):
         chunk_text = " ".join([seg['text'] for seg in chunk['segments']])
 
@@ -385,7 +511,7 @@ def summarize_with_claude(
                 model=model,
                 max_tokens=2048,
                 temperature=0.3,
-                system=chunk_prompt,
+                system=chunk_system_prompt,  # 캐싱된 프롬프트 사용
                 messages=[{
                     "role": "user",
                     "content": chunk_text
@@ -395,9 +521,19 @@ def summarize_with_claude(
             summary = message.content[0].text
             chunk_summaries.append(summary)
 
+            # Cache hit 추적
+            if enable_caching and hasattr(message, 'usage'):
+                usage = message.usage
+                if hasattr(usage, 'cache_read_input_tokens') and usage.cache_read_input_tokens > 0:
+                    cache_hits += 1
+                    logger.debug(f"Cache hit for chunk {i+1} (saved {usage.cache_read_input_tokens} tokens)")
+
         except Exception as e:
             logger.error(f"Summary failed for chunk {i+1}: {e}")
             chunk_summaries.append(f"[요약 실패: {str(e)}]")
+
+    if enable_caching and cache_hits > 0:
+        logger.info(f"Prompt cache hits: {cache_hits}/{len(transcripts)} chunks")
 
     # 전체 요약 (long summary)
     long_summary = "\n\n".join(chunk_summaries)
@@ -409,7 +545,7 @@ def summarize_with_claude(
             model=model,
             max_tokens=512,
             temperature=0.3,
-            system=final_prompt,
+            system=final_system_prompt,  # 캐싱된 프롬프트 사용
             messages=[{
                 "role": "user",
                 "content": long_summary

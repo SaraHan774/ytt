@@ -56,12 +56,27 @@ def setup_logging(verbose: bool):
     help='임시 파일 삭제하지 않음'
 )
 @click.option(
+    '--no-cache',
+    is_flag=True,
+    help='프롬프트 캐싱 비활성화 (요약 시)'
+)
+@click.option(
+    '--vad-aggressive',
+    is_flag=True,
+    help='Aggressive VAD 사용 (빠른 전사, 짧은 무음 포함 가능)'
+)
+@click.option(
+    '--force-librosa',
+    is_flag=True,
+    help='librosa 청킹 강제 사용 (ffmpeg 비활성화)'
+)
+@click.option(
     '--verbose', '-v',
     is_flag=True,
     help='상세 로그 출력'
 )
-@click.version_option(version='1.0.4', prog_name='ytt')
-def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, language, no_cleanup, verbose):
+@click.version_option(version='1.1.0', prog_name='ytt')
+def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, language, no_cleanup, no_cache, vad_aggressive, force_librosa, verbose):
     """
     YouTube Transcript Tool (ytt)
 
@@ -75,6 +90,9 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
         ytt ./output --summarize-only  # 기존 transcript 요약만
     """
     setup_logging(verbose)
+
+    # 설정 로드
+    user_config = config.get_config()
 
     # 첫 실행 체크
     if setup.check_first_run():
@@ -174,11 +192,28 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
 
                 # 2. 오디오 청킹
                 task2 = progress.add_task("🎵 오디오 처리 중...", total=None)
-                chunks = core.chunk_audio(download_result['audio_path'], output_path)
+                chunks = core.chunk_audio(
+                    download_result['audio_path'],
+                    output_path,
+                    force_librosa=force_librosa
+                )
                 progress.remove_task(task2)
                 console.print(f"[bold green]✓[/bold green] 오디오 처리 완료 ({len(chunks)} chunks)")
 
-                # 3. 전사
+                # 3. VAD 설정 준비
+                vad_config = None
+                if vad_aggressive:
+                    # CLI 플래그로 aggressive 지정
+                    vad_config = user_config.get('performance', {}).get('vad_config', {
+                        'min_silence_duration_ms': 300,
+                        'speech_pad_ms': 200,
+                        'threshold': 0.5
+                    })
+                elif 'performance' in user_config and 'vad_config' in user_config['performance']:
+                    # 설정 파일에서 VAD 설정 로드
+                    vad_config = user_config['performance']['vad_config']
+
+                # 4. 전사
                 task3 = progress.add_task(
                     f"🎤 음성 전사 중... (모델: {model_size})",
                     total=len(chunks)
@@ -187,18 +222,19 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
                 transcripts = core.transcribe_audio(
                     chunks,
                     model_size=model_size,
-                    language=language if language != 'auto' else None
+                    language=language if language != 'auto' else None,
+                    vad_config=vad_config
                 )
 
                 progress.update(task3, completed=len(chunks))
                 progress.remove_task(task3)
                 console.print(f"[bold green]✓[/bold green] 전사 완료 ({len(transcripts)} chunks)")
 
-                # 4. 파일 저장
+                # 5. 파일 저장
                 core.save_transcripts(transcripts, output_path, video_title)
                 console.print(f"[bold green]✓[/bold green] 전사 파일 저장 완료")
 
-            # 5. 요약 (옵션)
+            # 6. 요약 (옵션)
             if summarize:
                 # API 키 확인
                 api_key = config.get_api_key()
@@ -208,13 +244,23 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
                         "환경 변수로 설정하거나 `ytt-config set-api-key <key>`를 실행하세요."
                     )
                 else:
+                    # Prompt Caching 설정 (기본: 활성화, --no-cache로 비활성화)
+                    enable_caching = not no_cache
+                    if 'performance' in user_config:
+                        enable_caching = user_config['performance'].get('enable_prompt_caching', True) and not no_cache
+
                     task4 = progress.add_task("🤖 Claude로 요약 생성 중...", total=None)
-                    summary = core.summarize_with_claude(transcripts, api_key, language=language)
+                    summary = core.summarize_with_claude(
+                        transcripts,
+                        api_key,
+                        language=language,
+                        enable_caching=enable_caching
+                    )
                     core.save_summary(summary, output_path)
                     progress.remove_task(task4)
                     console.print("[bold green]✓[/bold green] 요약 완료")
 
-            # 6. 정리
+            # 7. 정리
             if not no_cleanup:
                 core.cleanup_temp_files(output_path)
                 console.print("[bold green]✓[/bold green] 임시 파일 정리 완료")

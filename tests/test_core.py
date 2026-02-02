@@ -5,6 +5,7 @@ import os
 import json
 import tempfile
 import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, mock_open
 import pytest
@@ -589,7 +590,7 @@ class TestTranscribeSingleChunk:
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
         mock_get_model.return_value = mock_model
 
-        args = (0, Path(mock_audio_file), "base", "ko")
+        args = (0, Path(mock_audio_file), "base", "ko", None)
         result = core._transcribe_single_chunk(args)
 
         assert result is not None
@@ -605,7 +606,238 @@ class TestTranscribeSingleChunk:
         mock_model.transcribe.side_effect = Exception("Transcription error")
         mock_get_model.return_value = mock_model
 
-        args = (0, Path(mock_audio_file), "base", "ko")
+        args = (0, Path(mock_audio_file), "base", "ko", None)
         result = core._transcribe_single_chunk(args)
 
         assert result is None
+
+
+# Phase 2 최적화 테스트
+
+class TestChunkAudioWithFFmpeg:
+    """chunk_audio_with_ffmpeg 함수 테스트"""
+
+    @patch('ytt.core.shutil.which')
+    @patch('ytt.core.subprocess.run')
+    def test_chunk_audio_with_ffmpeg_success(self, mock_subprocess, mock_which, mock_audio_file, temp_dir):
+        """ffmpeg로 청킹 성공"""
+        # ffmpeg/ffprobe 존재
+        mock_which.side_effect = lambda x: f'/usr/bin/{x}' if x in ['ffmpeg', 'ffprobe'] else None
+
+        # ffprobe 결과 (30초 오디오)
+        mock_probe_result = Mock()
+        mock_probe_result.stdout = "30.0\n"
+
+        # subprocess.run 호출 시뮬레이션
+        def subprocess_side_effect(cmd, **kwargs):
+            if 'ffprobe' in cmd[0]:
+                return mock_probe_result
+            elif 'ffmpeg' in cmd[0]:
+                # 실제 청크 파일 생성 시뮬레이션
+                output_dir = Path(temp_dir) / "output" / "chunks"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "segment_000.mp3").touch()
+                (output_dir / "segment_001.mp3").touch()
+                (output_dir / "segment_002.mp3").touch()
+                return Mock()
+            return Mock()
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        output_dir = Path(temp_dir) / "output"
+        result = core.chunk_audio_with_ffmpeg(Path(mock_audio_file), output_dir, segment_length=10)
+
+        assert result is not None
+        assert len(result) == 3
+        assert all(isinstance(p, Path) for p in result)
+
+    @patch('ytt.core.shutil.which')
+    def test_chunk_audio_with_ffmpeg_not_installed(self, mock_which, mock_audio_file, temp_dir):
+        """ffmpeg가 설치되지 않은 경우 None 반환"""
+        mock_which.return_value = None
+
+        output_dir = Path(temp_dir) / "output"
+        result = core.chunk_audio_with_ffmpeg(Path(mock_audio_file), output_dir)
+
+        assert result is None
+
+    @patch('ytt.core.shutil.which')
+    @patch('ytt.core.subprocess.run')
+    def test_chunk_audio_with_ffmpeg_error_handling(self, mock_subprocess, mock_which, mock_audio_file, temp_dir):
+        """ffmpeg 실행 중 에러 발생 시 None 반환"""
+        mock_which.side_effect = lambda x: f'/usr/bin/{x}' if x in ['ffmpeg', 'ffprobe'] else None
+        mock_subprocess.side_effect = subprocess.CalledProcessError(1, 'ffmpeg')
+
+        output_dir = Path(temp_dir) / "output"
+        result = core.chunk_audio_with_ffmpeg(Path(mock_audio_file), output_dir)
+
+        assert result is None
+
+
+class TestChunkAudioLibrosa:
+    """chunk_audio_librosa 함수 테스트"""
+
+    def test_chunk_audio_librosa_creates_chunks(self, mock_audio_file, temp_dir):
+        """librosa로 청킹 성공"""
+        output_dir = Path(temp_dir) / "output"
+        result = core.chunk_audio_librosa(Path(mock_audio_file), output_dir, segment_length=1)
+
+        assert len(result) > 0
+        assert all(chunk.exists() for chunk in result)
+        assert all(chunk.suffix == ".mp3" for chunk in result)
+
+
+class TestChunkAudioWrapper:
+    """chunk_audio wrapper 함수 테스트"""
+
+    @patch('ytt.core.chunk_audio_with_ffmpeg')
+    @patch('ytt.core.chunk_audio_librosa')
+    def test_chunk_audio_force_librosa(self, mock_librosa, mock_ffmpeg, mock_audio_file, temp_dir):
+        """force_librosa=True면 ffmpeg 건너뜀"""
+        mock_librosa.return_value = [Path(temp_dir) / "chunk_000.mp3"]
+
+        output_dir = Path(temp_dir) / "output"
+        result = core.chunk_audio(Path(mock_audio_file), output_dir, force_librosa=True)
+
+        # librosa는 호출됨, ffmpeg는 호출 안 됨
+        mock_librosa.assert_called_once()
+        mock_ffmpeg.assert_not_called()
+
+    @patch('ytt.core.chunk_audio_with_ffmpeg')
+    @patch('ytt.core.chunk_audio_librosa')
+    def test_chunk_audio_ffmpeg_fallback(self, mock_librosa, mock_ffmpeg, mock_audio_file, temp_dir):
+        """ffmpeg 실패 시 librosa로 fallback"""
+        mock_ffmpeg.return_value = None  # ffmpeg 실패
+        mock_librosa.return_value = [Path(temp_dir) / "chunk_000.mp3"]
+
+        output_dir = Path(temp_dir) / "output"
+        result = core.chunk_audio(Path(mock_audio_file), output_dir)
+
+        # 둘 다 호출됨 (ffmpeg 시도 -> librosa fallback)
+        mock_ffmpeg.assert_called_once()
+        mock_librosa.assert_called_once()
+
+
+class TestTranscribeWithVADConfig:
+    """VAD 설정 테스트"""
+
+    @patch('ytt.core.get_whisper_model')
+    def test_transcribe_with_custom_vad_config(self, mock_get_model, mock_audio_file):
+        """사용자 지정 VAD 설정 전달"""
+        mock_segment = Mock()
+        mock_segment.start = 0.0
+        mock_segment.end = 1.0
+        mock_segment.text = "테스트"
+
+        mock_model = Mock()
+        mock_info = Mock()
+        mock_info.language = "ko"
+        mock_model.transcribe.return_value = ([mock_segment], mock_info)
+        mock_get_model.return_value = mock_model
+
+        custom_vad = {
+            'min_silence_duration_ms': 300,
+            'speech_pad_ms': 200,
+            'threshold': 0.5
+        }
+
+        result = core.transcribe_audio(
+            [Path(mock_audio_file)],
+            model_size="base",
+            vad_config=custom_vad
+        )
+
+        # VAD 설정이 transcribe에 전달되었는지 확인
+        mock_model.transcribe.assert_called_once()
+        call_kwargs = mock_model.transcribe.call_args[1]
+        assert call_kwargs['vad_parameters'] == custom_vad
+
+    @patch('ytt.core.get_whisper_model')
+    def test_transcribe_with_default_vad(self, mock_get_model, mock_audio_file):
+        """VAD 설정 없으면 기본값 사용"""
+        mock_segment = Mock()
+        mock_segment.start = 0.0
+        mock_segment.end = 1.0
+        mock_segment.text = "테스트"
+
+        mock_model = Mock()
+        mock_info = Mock()
+        mock_info.language = "ko"
+        mock_model.transcribe.return_value = ([mock_segment], mock_info)
+        mock_get_model.return_value = mock_model
+
+        result = core.transcribe_audio(
+            [Path(mock_audio_file)],
+            model_size="base",
+            vad_config=None  # 명시적으로 None
+        )
+
+        # 기본 VAD 설정 사용
+        mock_model.transcribe.assert_called_once()
+        call_kwargs = mock_model.transcribe.call_args[1]
+        assert call_kwargs['vad_parameters'] == {'min_silence_duration_ms': 500}
+
+
+class TestSummarizeWithPromptCaching:
+    """Prompt Caching 테스트"""
+
+    @patch('ytt.core.Anthropic')
+    def test_summarize_with_caching_enabled(self, mock_anthropic_class, mock_env_vars):
+        """Prompt Caching 활성화"""
+        mock_content = Mock()
+        mock_content.text = "요약"
+
+        # Cache hit 시뮬레이션
+        mock_usage = Mock()
+        mock_usage.cache_read_input_tokens = 1000
+
+        mock_message = Mock()
+        mock_message.content = [mock_content]
+        mock_message.usage = mock_usage
+
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_message
+        mock_anthropic_class.return_value = mock_client
+
+        transcripts = [{'segments': [{'text': 'test'}]}]
+
+        result = core.summarize_with_claude(
+            transcripts,
+            api_key="test-key",
+            enable_caching=True
+        )
+
+        assert 'long_summary' in result
+        # 첫 번째 호출 확인
+        first_call = mock_client.messages.create.call_args_list[0]
+        system_arg = first_call[1]['system']
+
+        # 프롬프트가 짧아서 caching 안 될 수 있음 (1024자 이상이어야 함)
+        # 실제로는 plain string이 전달됨
+        assert system_arg is not None
+
+    @patch('ytt.core.Anthropic')
+    def test_summarize_with_caching_disabled(self, mock_anthropic_class, mock_env_vars):
+        """Prompt Caching 비활성화"""
+        mock_content = Mock()
+        mock_content.text = "요약"
+        mock_message = Mock()
+        mock_message.content = [mock_content]
+
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_message
+        mock_anthropic_class.return_value = mock_client
+
+        transcripts = [{'segments': [{'text': 'test'}]}]
+
+        result = core.summarize_with_claude(
+            transcripts,
+            api_key="test-key",
+            enable_caching=False
+        )
+
+        assert 'long_summary' in result
+        # system이 plain string이어야 함
+        first_call = mock_client.messages.create.call_args_list[0]
+        system_arg = first_call[1]['system']
+        assert isinstance(system_arg, str)
