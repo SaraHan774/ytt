@@ -90,6 +90,19 @@ def download_youtube(youtube_url: str, output_dir: Path) -> Dict[str, any]:
         "outtmpl": str(raw_audio_dir / "%(title)s.%(ext)s"),
         "quiet": not logger.isEnabledFor(logging.DEBUG),
         "no_warnings": True,
+        # Anti-403 settings
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+                "player_skip": ["webpage", "configs"],
+            }
+        },
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-us,en;q=0.5",
+            "Sec-Fetch-Mode": "navigate",
+        },
     }
 
     try:
