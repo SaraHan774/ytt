@@ -5,7 +5,10 @@ import click
 import logging
 from pathlib import Path
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+from rich.progress import (
+    Progress, SpinnerColumn, TextColumn, BarColumn,
+    TaskProgressColumn, TimeRemainingColumn, DownloadColumn, TransferSpeedColumn,
+)
 from rich.panel import Panel
 from rich.table import Table
 from rich.prompt import Confirm
@@ -88,12 +91,17 @@ def setup_logging(verbose: bool):
     help='librosa 청킹 강제 사용 (ffmpeg 비활성화)'
 )
 @click.option(
+    '--fast',
+    is_flag=True,
+    help='빠른 전사 모드: beam_size=1, 청크 300초, CPU 풀 활용 (속도 우선, 품질 소폭 저하)'
+)
+@click.option(
     '--verbose', '-v',
     is_flag=True,
     help='상세 로그 출력'
 )
-@click.version_option(version='1.2.0', prog_name='ytt')
-def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, save_json, save_metadata, model_size, language, no_cleanup, no_cache, vad_aggressive, force_librosa, verbose):
+@click.version_option(version='1.3.0', prog_name='ytt')
+def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, save_json, save_metadata, model_size, language, no_cleanup, no_cache, vad_aggressive, force_librosa, fast, verbose):
     """
     YouTube Transcript Tool (ytt)
 
@@ -177,6 +185,8 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
     else:
         console.print(f"[bold]Model:[/bold] {model_size}")
         console.print(f"[bold]Language:[/bold] {language if language != 'auto' else 'auto-detect'}")
+        if fast:
+            console.print("[bold magenta]⚡ 빠른 전사 모드 (beam_size=1, 300초 청크)[/bold magenta]")
         if summarize:
             console.print("[bold yellow]📝 요약 모드 활성화[/bold yellow]")
     console.print()
@@ -188,6 +198,8 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
             console=console,
         ) as progress:
 
@@ -202,8 +214,23 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
                 console.print(f"  [dim]제목: {video_title}[/dim]")
             else:
                 # 1. YouTube 다운로드
-                task1 = progress.add_task("🎬 영상 다운로드 중...", total=None)
-                download_result = core.download_youtube(youtube_url, output_path)
+                task1 = progress.add_task("🎬 영상 다운로드 중...", total=100)
+
+                def _dl_hook(d):
+                    if d['status'] == 'downloading':
+                        total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                        downloaded = d.get('downloaded_bytes', 0)
+                        speed = d.get('speed', 0) or 0
+                        speed_str = f"{speed/1024/1024:.1f} MB/s" if speed > 0 else ""
+                        if total > 0:
+                            pct = (downloaded / total) * 100
+                            size_str = f"{downloaded/1024/1024:.1f}/{total/1024/1024:.1f} MB"
+                            desc = f"🎬 영상 다운로드 중... [{size_str}] {speed_str}"
+                            progress.update(task1, completed=pct, description=desc)
+                    elif d['status'] == 'finished':
+                        progress.update(task1, completed=100, description="🎬 다운로드 완료, 오디오 변환 중...")
+
+                download_result = core.download_youtube(youtube_url, output_path, progress_hook=_dl_hook)
                 progress.remove_task(task1)
                 console.print("[bold green]✓[/bold green] 다운로드 완료")
 
@@ -216,9 +243,11 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
 
                 # 2. 오디오 청킹
                 task2 = progress.add_task("🎵 오디오 처리 중...", total=None)
+                segment_length = 300 if fast else 600
                 chunks = core.chunk_audio(
                     download_result['audio_path'],
                     output_path,
+                    segment_length=segment_length,
                     force_librosa=force_librosa
                 )
                 progress.remove_task(task2)
@@ -238,19 +267,23 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
                     vad_config = user_config['performance']['vad_config']
 
                 # 4. 전사
-                task3 = progress.add_task(
-                    f"🎤 음성 전사 중... (모델: {model_size})",
-                    total=len(chunks)
-                )
+                beam_size = 1 if fast else 5
+                task3_desc = f"🎤 음성 전사 중... (모델: {model_size}" + (" ⚡빠름" if fast else "") + ")"
+                task3 = progress.add_task(task3_desc, total=len(chunks))
+
+                def _on_chunk_done(idx):
+                    progress.advance(task3)
 
                 transcripts = core.transcribe_audio(
                     chunks,
                     model_size=model_size,
                     language=language if language != 'auto' else None,
-                    vad_config=vad_config
+                    vad_config=vad_config,
+                    on_chunk_done=_on_chunk_done,
+                    beam_size=beam_size,
+                    condition_on_previous_text=not fast,
                 )
 
-                progress.update(task3, completed=len(chunks))
                 progress.remove_task(task3)
                 console.print(f"[bold green]✓[/bold green] 전사 완료 ({len(transcripts)} chunks)")
 

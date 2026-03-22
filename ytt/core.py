@@ -66,7 +66,7 @@ def find_audio_files(path: str, extension: str = ".mp3") -> List[str]:
     return audio_files
 
 
-def download_youtube(youtube_url: str, output_dir: Path) -> Dict[str, any]:
+def download_youtube(youtube_url: str, output_dir: Path, progress_hook=None) -> Dict[str, any]:
     """
     YouTube 영상 다운로드
 
@@ -93,6 +93,7 @@ def download_youtube(youtube_url: str, output_dir: Path) -> Dict[str, any]:
         "outtmpl": str(raw_audio_dir / "%(title)s.%(ext)s"),
         "quiet": not logger.isEnabledFor(logging.DEBUG),
         "no_warnings": True,
+        "progress_hooks": [progress_hook] if progress_hook else [],
         # Anti-403 settings
         "extractor_args": {
             "youtube": {
@@ -277,7 +278,7 @@ def chunk_audio(audio_path: Path, output_dir: Path, segment_length: int = 600, f
 
 def _transcribe_single_chunk(args):
     """단일 청크 전사 (병렬 처리용 헬퍼 함수)"""
-    i, audio_file, model_size, language, vad_config = args
+    i, audio_file, model_size, language, vad_config, beam_size, condition_on_previous_text = args
 
     try:
         # 스레드마다 독립 모델 인스턴스 사용 (공유 모델의 내부 뮤텍스 경합 방지)
@@ -292,7 +293,8 @@ def _transcribe_single_chunk(args):
         segments, info = model.transcribe(
             str(audio_file),
             language=language,
-            beam_size=5,
+            beam_size=beam_size,
+            condition_on_previous_text=condition_on_previous_text,
             vad_filter=True,
             vad_parameters=vad_config
         )
@@ -323,7 +325,11 @@ def transcribe_audio(
     audio_files: List[Path],
     model_size: str = "base",
     language: Optional[str] = "ko",
-    vad_config: Optional[Dict] = None
+    vad_config: Optional[Dict] = None,
+    on_chunk_done=None,
+    beam_size: int = 5,
+    condition_on_previous_text: bool = True,
+    max_workers: Optional[int] = None,
 ) -> List[Dict]:
     """
     오디오 파일들을 병렬로 전사
@@ -337,10 +343,10 @@ def transcribe_audio(
     Returns:
         List[Dict]: 전사 결과 (세그먼트 정보 포함)
     """
-    logger.info(f"Transcribing {len(audio_files)} files with model: {model_size} (parallel mode)")
+    logger.info(f"Transcribing {len(audio_files)} files with model: {model_size} (parallel mode, beam_size={beam_size})")
 
     # 병렬 처리를 위한 인자 준비
-    tasks = [(i, audio_file, model_size, language, vad_config)
+    tasks = [(i, audio_file, model_size, language, vad_config, beam_size, condition_on_previous_text)
              for i, audio_file in enumerate(audio_files)]
 
     transcripts = []
@@ -348,8 +354,11 @@ def transcribe_audio(
     if not tasks:
         return transcripts
 
-    # ThreadPoolExecutor로 병렬 처리 (최대 4개 동시)
-    max_workers = min(4, len(audio_files))
+    # ThreadPoolExecutor로 병렬 처리
+    if max_workers is None:
+        import os
+        cpu_count = os.cpu_count() or 4
+        max_workers = min(cpu_count, len(audio_files))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # 작업 제출
         future_to_idx = {executor.submit(_transcribe_single_chunk, task): task[0]
@@ -365,6 +374,8 @@ def transcribe_audio(
                     results[idx] = result
             except Exception as e:
                 logger.error(f"Task for chunk {idx} raised exception: {e}")
+            if on_chunk_done is not None:
+                on_chunk_done(idx)
 
         # chunk_id 순서대로 정렬
         transcripts = [results[i] for i in sorted(results.keys())]
