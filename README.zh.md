@@ -8,7 +8,7 @@
 
 - 🆓 **完全免费转录**: 使用本地 Whisper 模型（无 API 费用）
 - 🚀 **GPU 加速**: 使用 faster-whisper 处理速度提升 5-10 倍
-- 🤖 **最新 Claude Sonnet 4.5**: 高质量摘要生成
+- 🤖 **最新 Claude Sonnet 4.6**: 高质量摘要生成
 - 🌍 **多语言支持**: 支持韩语、英语和中文摘要
 - 💻 **CLI 界面**: 简单的命令行使用
 - ⚡ **仅摘要模式**: 从现有转录快速重新生成摘要
@@ -102,16 +102,19 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 ### 基本使用
 
 ```bash
-# 仅转录（自动检测语言）
+# 仅转录（视频信息 + 纯文本）
 ytt "https://youtube.com/watch?v=xxx" ./output
 
-# 转录 + 摘要
+# 转录 + 摘要（自动保存 transcript.json）
 ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 
-# 指定模型大小（tiny/base/small/medium/large）
-ytt "https://youtube.com/watch?v=xxx" ./output -m medium
+# 同时保存时间戳文件
+ytt "https://youtube.com/watch?v=xxx" ./output --timestamps
 
-# 手动指定语言（韩语）
+# 同时保存 JSON + 元数据文件
+ytt "https://youtube.com/watch?v=xxx" ./output --json --metadata
+
+# 指定语言 + 摘要
 ytt "https://youtube.com/watch?v=xxx" ./output -l ko --summarize
 
 # 英语视频 + 英语摘要
@@ -123,10 +126,13 @@ ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
 仅从已转录的目录生成摘要：
 
 ```bash
-# 首先，使用 tiny 模型快速转录
-ytt "URL" ./output -m tiny
+# 首先，使用 --json 转录（--summarize-only 需要 transcript.json）
+ytt "URL" ./output -m tiny --json
 
-# 稍后，仅添加摘要
+# 或者使用 --summarize 首次运行（自动创建 transcript.json）
+ytt "URL" ./output --summarize
+
+# 稍后，仅重新生成摘要
 ytt ./output --summarize-only -l ko
 ```
 
@@ -137,25 +143,35 @@ ytt --help
 ```
 
 **主要选项：**
-- `--summarize, -s`: 转录时一并生成摘要
-- `--summarize-only`: 仅从现有转录生成摘要
+- `--summarize, -s`: 转录时一并生成摘要（自动保存 transcript.json）
+- `--summarize-only`: 仅从现有 transcript.json 生成摘要
+- `--timestamps`: 同时保存带时间戳的转录（transcript_with_timestamps.txt）
+- `--json`: 同时保存结构化 JSON（transcript.json）
+- `--metadata`: 同时保存视频元数据（metadata.json）
 - `--model-size, -m`: Whisper 模型大小（默认：base）
 - `--language, -l`: 语言规范（默认：auto - 自动检测）
 - `--no-cleanup`: 不删除临时文件
+- `--no-cache`: 禁用提示缓存（摘要时）
+- `--vad-aggressive`: 使用激进 VAD（更快转录）
+- `--force-librosa`: 强制使用 librosa 分块（禁用 ffmpeg）
 - `--verbose, -v`: 详细日志输出
 
 ---
 
 ## 输出文件
 
+默认只创建 `transcript.txt`，其他文件均为可选。
+
 ```
 output/
-├── transcript.txt                    # 纯文本转录
-├── transcript_with_timestamps.txt    # 带时间戳的转录
-├── transcript.json                   # JSON 格式数据
-├── metadata.json                     # 视频元数据
-└── summary.txt                       # AI 摘要（使用 --summarize 选项）
+├── transcript.txt                    # 视频信息 + 纯文本转录（始终创建）
+├── transcript_with_timestamps.txt    # 带时间戳的转录（--timestamps）
+├── transcript.json                   # JSON 格式数据（--json 或 --summarize）
+├── metadata.json                     # 视频元数据（--metadata）
+└── summary.txt                       # AI 摘要（--summarize）
 ```
+
+`transcript.txt` 的标题中包含视频标题、URL、上传者和时长。
 
 ---
 
@@ -170,12 +186,13 @@ ytt "https://youtube.com/watch?v=lecture123" ./lectures/ai-basics \
     --language ko
 ```
 
-### 2. 快速英语播客转录
+### 2. 快速英语播客转录（保存所有文件）
 
 ```bash
 ytt "https://youtube.com/watch?v=podcast456" ./podcasts/ep01 \
     -m tiny \
-    -l en
+    -l en \
+    --timestamps --json --metadata
 ```
 
 ### 3. 批处理脚本

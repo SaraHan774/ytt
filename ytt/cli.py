@@ -40,6 +40,23 @@ def setup_logging(verbose: bool):
     help='기존 transcript로 요약만 생성 (youtube_url 불필요)'
 )
 @click.option(
+    '--timestamps',
+    is_flag=True,
+    help='타임스탬프 포함 전사 파일도 저장 (transcript_with_timestamps.txt)'
+)
+@click.option(
+    '--json',
+    'save_json',
+    is_flag=True,
+    help='구조화된 JSON 파일도 저장 (transcript.json)'
+)
+@click.option(
+    '--metadata',
+    'save_metadata',
+    is_flag=True,
+    help='영상 메타데이터 파일도 저장 (metadata.json)'
+)
+@click.option(
     '--model-size', '-m',
     type=click.Choice(['tiny', 'base', 'small', 'medium', 'large']),
     default='base',
@@ -75,16 +92,18 @@ def setup_logging(verbose: bool):
     is_flag=True,
     help='상세 로그 출력'
 )
-@click.version_option(version='1.1.0', prog_name='ytt')
-def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, language, no_cleanup, no_cache, vad_aggressive, force_librosa, verbose):
+@click.version_option(version='1.2.0', prog_name='ytt')
+def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, save_json, save_metadata, model_size, language, no_cleanup, no_cache, vad_aggressive, force_librosa, verbose):
     """
     YouTube Transcript Tool (ytt)
 
     YouTube 영상을 다운로드하고 전사(transcript)를 생성합니다.
+    기본 출력: 영상 정보 + 전체 전사 텍스트 (transcript.txt)
 
     \b
     예시:
         ytt "https://youtube.com/watch?v=xxx" ./output
+        ytt "https://youtube.com/watch?v=xxx" ./output --timestamps --json
         ytt "https://youtube.com/watch?v=xxx" ./output --summarize
         ytt "https://youtube.com/watch?v=xxx" ./output -m medium -s
         ytt ./output --summarize-only  # 기존 transcript 요약만
@@ -106,6 +125,10 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
             # 기본 설정 파일 생성
             config.save_config(config.get_default_config())
 
+    # --summarize 시 transcript.json 자동 생성 (--summarize-only 재사용을 위해)
+    if summarize:
+        save_json = True
+
     # 인자 파싱
     if summarize_only:
         # summarize-only 모드: 첫 번째 인자가 output_dir
@@ -125,7 +148,7 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
         output_path = Path(output_dir).absolute()
 
     if summarize_only:
-        # summarize-only: 디렉토리가 존재하고 transcript.json이 있어야 함
+        # summarize-only: 디렉토리가 존재하고 transcript.json 또는 transcript.txt가 있어야 함
         if not output_path.exists():
             console.print(f"[bold red]✗ 오류:[/bold red] 출력 디렉토리가 존재하지 않습니다: {output_path}")
             exit(1)
@@ -133,7 +156,7 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
         transcript_file = output_path / "transcript.json"
         if not transcript_file.exists():
             console.print(f"[bold red]✗ 오류:[/bold red] transcript.json 파일을 찾을 수 없습니다: {transcript_file}")
-            console.print("[dim]먼저 전사를 생성하세요.[/dim]")
+            console.print("[dim]먼저 --json 옵션으로 전사를 생성하세요.[/dim]")
             exit(1)
     else:
         output_path.mkdir(parents=True, exist_ok=True)
@@ -187,8 +210,9 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
                 video_title = download_result['title']
                 console.print(f"  [dim]제목: {video_title}[/dim]")
 
-                # 메타데이터 저장
-                core.save_metadata(download_result, output_path)
+                # 메타데이터 저장 (선택)
+                if save_metadata:
+                    core.save_metadata(download_result, output_path)
 
                 # 2. 오디오 청킹
                 task2 = progress.add_task("🎵 오디오 처리 중...", total=None)
@@ -231,7 +255,14 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
                 console.print(f"[bold green]✓[/bold green] 전사 완료 ({len(transcripts)} chunks)")
 
                 # 5. 파일 저장
-                core.save_transcripts(transcripts, output_path, video_title)
+                core.save_transcripts(
+                    transcripts,
+                    output_path,
+                    video_title,
+                    metadata=download_result,
+                    save_timestamps=timestamps,
+                    save_json=save_json,
+                )
                 console.print(f"[bold green]✓[/bold green] 전사 파일 저장 완료")
 
             # 6. 요약 (옵션)
@@ -271,11 +302,13 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, model_size, 
         table.add_column("파일명", style="cyan")
         table.add_column("설명")
 
-        table.add_row("transcript.txt", "평문 전사 텍스트")
-        table.add_row("transcript_with_timestamps.txt", "타임스탬프 포함 전사")
-        table.add_row("transcript.json", "구조화된 JSON 데이터")
-        table.add_row("metadata.json", "영상 메타데이터")
-
+        table.add_row("transcript.txt", "영상 정보 + 전사 텍스트")
+        if timestamps:
+            table.add_row("transcript_with_timestamps.txt", "타임스탬프 포함 전사")
+        if save_json:
+            table.add_row("transcript.json", "구조화된 JSON 데이터")
+        if save_metadata:
+            table.add_row("metadata.json", "영상 메타데이터")
         if summarize and api_key:
             table.add_row("summary.txt", "AI 요약 (상세 + TL;DR)")
 

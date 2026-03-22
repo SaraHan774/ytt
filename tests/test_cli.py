@@ -32,7 +32,7 @@ class TestCLI:
         result = runner.invoke(cli.main, ['--version'])
 
         assert result.exit_code == 0
-        assert '1.0.0' in result.output
+        assert '1.2.0' in result.output
 
     @patch('ytt.core.download_youtube')
     @patch('ytt.core.chunk_audio')
@@ -308,8 +308,9 @@ class TestCLIIntegration:
         # 검증
         assert result.exit_code == 0
 
-        # 출력 파일 확인
+        # 기본 출력 파일 확인
         assert (output_dir / 'transcript.txt').exists()
-        assert (output_dir / 'transcript_with_timestamps.txt').exists()
-        assert (output_dir / 'transcript.json').exists()
-        assert (output_dir / 'metadata.json').exists()
+        # 선택적 파일은 기본적으로 생성되지 않음
+        assert not (output_dir / 'transcript_with_timestamps.txt').exists()
+        assert not (output_dir / 'transcript.json').exists()
+        assert not (output_dir / 'metadata.json').exists()

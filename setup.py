@@ -10,7 +10,7 @@ long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists
 
 setup(
     name="ytt",
-    version="1.1.0",
+    version="1.2.0",
     description="YouTube Transcript Tool - AI-powered video transcription with performance optimizations",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -49,7 +49,7 @@ setup(
         "Intended Audience :: End Users/Desktop",
         "Topic :: Multimedia :: Sound/Audio :: Speech",
         "Topic :: Multimedia :: Video",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",

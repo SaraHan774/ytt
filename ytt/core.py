@@ -30,13 +30,16 @@ logger = logging.getLogger(__name__)
 @lru_cache(maxsize=1)
 def get_whisper_model(model_size: str = "base"):
     """
-    Whisper 모델 로드 (캐싱)
+    Whisper 모델 로드 (캐싱) — 메인 스레드 / 단일 워커용
     GPU가 없으면 자동으로 CPU로 fallback
     """
-    logger.info(f"Loading Whisper model: {model_size}")
+    return _load_whisper_model(model_size)
 
+
+def _load_whisper_model(model_size: str = "base") -> "WhisperModel":
+    """새 Whisper 모델 인스턴스 생성 (스레드별 독립 인스턴스용)"""
+    logger.info(f"Loading Whisper model: {model_size}")
     try:
-        # GPU 시도
         model = WhisperModel(
             model_size,
             device="cuda",
@@ -45,7 +48,6 @@ def get_whisper_model(model_size: str = "base"):
         logger.info("Using GPU acceleration")
         return model
     except Exception as e:
-        # GPU 실패 시 CPU로 fallback
         logger.warning(f"GPU not available ({e}), falling back to CPU")
         return WhisperModel(
             model_size,
@@ -278,8 +280,8 @@ def _transcribe_single_chunk(args):
     i, audio_file, model_size, language, vad_config = args
 
     try:
-        # 각 스레드에서 모델 가져오기
-        model = get_whisper_model(model_size)
+        # 스레드마다 독립 모델 인스턴스 사용 (공유 모델의 내부 뮤텍스 경합 방지)
+        model = _load_whisper_model(model_size)
 
         logger.info(f"Transcribing chunk {i+1}: {audio_file.name}")
 
@@ -343,6 +345,9 @@ def transcribe_audio(
 
     transcripts = []
 
+    if not tasks:
+        return transcripts
+
     # ThreadPoolExecutor로 병렬 처리 (최대 4개 동시)
     max_workers = min(4, len(audio_files))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -376,40 +381,60 @@ def format_time(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def save_transcripts(transcripts: List[Dict], output_dir: Path, video_title: str = "video"):
+def save_transcripts(
+    transcripts: List[Dict],
+    output_dir: Path,
+    video_title: str = "video",
+    metadata: Optional[Dict] = None,
+    save_timestamps: bool = False,
+    save_json: bool = False,
+):
     """
     전사 결과를 파일로 저장
 
-    저장 파일:
-    - transcript.txt: 평문 텍스트
-    - transcript_with_timestamps.txt: 타임스탬프 포함
-    - transcript.json: 구조화된 데이터
+    기본 저장 파일:
+    - transcript.txt: 영상 기본 정보 + 평문 텍스트
+
+    선택적 저장 파일:
+    - transcript_with_timestamps.txt: 타임스탬프 포함 (save_timestamps=True)
+    - transcript.json: 구조화된 데이터 (save_json=True)
     """
     logger.info(f"Saving transcripts to {output_dir}")
 
-    # 1. 평문 텍스트
+    # 1. 기본 출력: 영상 정보 헤더 + 평문 텍스트
     with open(output_dir / "transcript.txt", "w", encoding="utf-8") as f:
         f.write(f"# {video_title}\n\n")
+        if metadata:
+            if metadata.get('url'):
+                f.write(f"URL: {metadata['url']}\n")
+            if metadata.get('uploader'):
+                f.write(f"Uploader: {metadata['uploader']}\n")
+            if metadata.get('duration'):
+                duration_sec = int(metadata['duration'])
+                f.write(f"Duration: {format_time(duration_sec)}\n")
+            f.write("\n")
         for chunk in transcripts:
             for seg in chunk['segments']:
                 f.write(seg['text'] + " ")
             f.write("\n\n")
 
-    # 2. 타임스탬프 포함
-    with open(output_dir / "transcript_with_timestamps.txt", "w", encoding="utf-8") as f:
-        f.write(f"# {video_title}\n\n")
-        for chunk in transcripts:
-            for seg in chunk['segments']:
-                timestamp = f"[{format_time(seg['start'])} -> {format_time(seg['end'])}]"
-                f.write(f"{timestamp} {seg['text']}\n")
-            f.write("\n")
+    # 2. 타임스탬프 포함 (선택)
+    if save_timestamps:
+        with open(output_dir / "transcript_with_timestamps.txt", "w", encoding="utf-8") as f:
+            f.write(f"# {video_title}\n\n")
+            for chunk in transcripts:
+                for seg in chunk['segments']:
+                    timestamp = f"[{format_time(seg['start'])} -> {format_time(seg['end'])}]"
+                    f.write(f"{timestamp} {seg['text']}\n")
+                f.write("\n")
 
-    # 3. JSON 형식
-    with open(output_dir / "transcript.json", "w", encoding="utf-8") as f:
-        json.dump({
-            'title': video_title,
-            'chunks': transcripts
-        }, f, ensure_ascii=False, indent=2)
+    # 3. JSON 형식 (선택)
+    if save_json:
+        with open(output_dir / "transcript.json", "w", encoding="utf-8") as f:
+            json.dump({
+                'title': video_title,
+                'chunks': transcripts
+            }, f, ensure_ascii=False, indent=2)
 
     logger.info("Transcripts saved")
 
@@ -417,7 +442,7 @@ def save_transcripts(transcripts: List[Dict], output_dir: Path, video_title: str
 def summarize_with_claude(
     transcripts: List[Dict],
     api_key: Optional[str] = None,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: str = "claude-sonnet-4-6",
     language: str = "ko",
     enable_caching: bool = True
 ) -> Dict[str, str]:
@@ -498,39 +523,47 @@ def summarize_with_claude(
 
     logger.info(f"Text length: {len(full_text)} characters")
 
-    # 청크별 요약
-    chunk_summaries = []
+    # 청크별 요약 — 병렬 처리로 API 왕복 대기 시간 단축
     cache_hits = 0
-    for i, chunk in enumerate(transcripts):
-        chunk_text = " ".join([seg['text'] for seg in chunk['segments']])
 
+    def _summarize_chunk(args):
+        i, chunk_text = args
         logger.info(f"Summarizing chunk {i+1}/{len(transcripts)}")
-
         try:
             message = anthropic.messages.create(
                 model=model,
                 max_tokens=2048,
                 temperature=0.3,
-                system=chunk_system_prompt,  # 캐싱된 프롬프트 사용
-                messages=[{
-                    "role": "user",
-                    "content": chunk_text
-                }]
+                system=chunk_system_prompt,
+                messages=[{"role": "user", "content": chunk_text}]
             )
-
-            summary = message.content[0].text
-            chunk_summaries.append(summary)
-
-            # Cache hit 추적
-            if enable_caching and hasattr(message, 'usage'):
-                usage = message.usage
-                if hasattr(usage, 'cache_read_input_tokens') and usage.cache_read_input_tokens > 0:
-                    cache_hits += 1
-                    logger.debug(f"Cache hit for chunk {i+1} (saved {usage.cache_read_input_tokens} tokens)")
-
+            return i, message.content[0].text, getattr(message, 'usage', None)
         except Exception as e:
             logger.error(f"Summary failed for chunk {i+1}: {e}")
-            chunk_summaries.append(f"[요약 실패: {str(e)}]")
+            return i, f"[요약 실패: {str(e)}]", None
+
+    chunk_tasks = [
+        (i, " ".join(seg['text'] for seg in chunk['segments']))
+        for i, chunk in enumerate(transcripts)
+    ]
+
+    chunk_results = {}
+    max_summary_workers = min(4, len(transcripts))
+    with ThreadPoolExecutor(max_workers=max_summary_workers) as executor:
+        future_to_idx = {executor.submit(_summarize_chunk, task): task[0] for task in chunk_tasks}
+        for future in as_completed(future_to_idx):
+            i, summary_text, usage = future.result()
+            chunk_results[i] = summary_text
+            if enable_caching and usage is not None:
+                try:
+                    tokens = int(getattr(usage, 'cache_read_input_tokens', 0))
+                    if tokens > 0:
+                        cache_hits += 1
+                        logger.debug(f"Cache hit for chunk {i+1} (saved {tokens} tokens)")
+                except (TypeError, ValueError):
+                    pass
+
+    chunk_summaries = [chunk_results[i] for i in sorted(chunk_results.keys())]
 
     if enable_caching and cache_hits > 0:
         logger.info(f"Prompt cache hits: {cache_hits}/{len(transcripts)} chunks")

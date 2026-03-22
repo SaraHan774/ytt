@@ -8,7 +8,7 @@ A CLI tool for automatically transcribing and summarizing YouTube videos.
 
 - 🆓 **Completely Free Transcription**: Uses local Whisper models (no API costs)
 - 🚀 **GPU Acceleration**: 5-10x faster processing with faster-whisper
-- 🤖 **Latest Claude Sonnet 4.5**: High-quality summarization
+- 🤖 **Latest Claude Sonnet 4.6**: High-quality summarization
 - 🌍 **Multi-language Support**: Korean, English, and Chinese summaries
 - 💻 **CLI Interface**: Simple command-line usage
 - ⚡ **Summary-only Mode**: Quickly regenerate summaries from existing transcripts
@@ -102,16 +102,19 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 ### Basic Usage
 
 ```bash
-# Transcription only (auto-detect language)
+# Transcription only (video info + plain text)
 ytt "https://youtube.com/watch?v=xxx" ./output
 
-# Transcription + Summary
+# Transcription + Summary (auto-saves transcript.json)
 ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 
-# Specify model size (tiny/base/small/medium/large)
-ytt "https://youtube.com/watch?v=xxx" ./output -m medium
+# Also save timestamps file
+ytt "https://youtube.com/watch?v=xxx" ./output --timestamps
 
-# Manually specify language (Korean)
+# Also save JSON + metadata files
+ytt "https://youtube.com/watch?v=xxx" ./output --json --metadata
+
+# Specify language + summary
 ytt "https://youtube.com/watch?v=xxx" ./output -l ko --summarize
 
 # English video + English summary
@@ -123,10 +126,13 @@ ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
 Generate summaries only from already transcribed directories:
 
 ```bash
-# First, quickly transcribe with tiny model
-ytt "URL" ./output -m tiny
+# First, transcribe with --json (required for --summarize-only)
+ytt "URL" ./output -m tiny --json
 
-# Later, add summary only
+# Or run with --summarize first (transcript.json auto-created)
+ytt "URL" ./output --summarize
+
+# Later, regenerate summary only
 ytt ./output --summarize-only -l ko
 ```
 
@@ -137,25 +143,35 @@ ytt --help
 ```
 
 **Key Options:**
-- `--summarize, -s`: Generate summary along with transcription
-- `--summarize-only`: Generate summary only from existing transcript
+- `--summarize, -s`: Generate summary along with transcription (auto-saves transcript.json)
+- `--summarize-only`: Generate summary only from existing transcript.json
+- `--timestamps`: Also save transcript with timestamps (transcript_with_timestamps.txt)
+- `--json`: Also save structured JSON (transcript.json)
+- `--metadata`: Also save video metadata (metadata.json)
 - `--model-size, -m`: Whisper model size (default: base)
 - `--language, -l`: Language specification (default: auto - auto-detect)
 - `--no-cleanup`: Don't delete temporary files
+- `--no-cache`: Disable prompt caching (when summarizing)
+- `--vad-aggressive`: Use aggressive VAD (faster transcription)
+- `--force-librosa`: Force librosa chunking (disable ffmpeg)
 - `--verbose, -v`: Verbose logging output
 
 ---
 
 ## Output Files
 
+By default, only `transcript.txt` is created. All other files are optional.
+
 ```
 output/
-├── transcript.txt                    # Plain text transcript
-├── transcript_with_timestamps.txt    # Transcript with timestamps
-├── transcript.json                   # JSON format data
-├── metadata.json                     # Video metadata
-└── summary.txt                       # AI summary (with --summarize option)
+├── transcript.txt                    # Video info + plain transcript (always created)
+├── transcript_with_timestamps.txt    # Transcript with timestamps (--timestamps)
+├── transcript.json                   # JSON format data (--json or --summarize)
+├── metadata.json                     # Video metadata (--metadata)
+└── summary.txt                       # AI summary (--summarize)
 ```
+
+`transcript.txt` includes a header with the video title, URL, uploader, and duration.
 
 ---
 
@@ -170,12 +186,13 @@ ytt "https://youtube.com/watch?v=lecture123" ./lectures/ai-basics \
     --language ko
 ```
 
-### 2. Quick English Podcast Transcription
+### 2. Quick English Podcast Transcription (save all files)
 
 ```bash
 ytt "https://youtube.com/watch?v=podcast456" ./podcasts/ep01 \
     -m tiny \
-    -l en
+    -l en \
+    --timestamps --json --metadata
 ```
 
 ### 3. Batch Processing Script

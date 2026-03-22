@@ -9,7 +9,7 @@ YouTube 영상을 자동으로 전사하고 요약하는 CLI 도구입니다.
 - 🆓 **완전 무료 전사**: 로컬 Whisper 모델 사용 (API 비용 없음)
 - 🚀 **GPU 가속**: faster-whisper로 5-10배 빠른 처리
 - ⚡ **극한 최적화**: ffmpeg 청킹으로 메모리 90% 절감, Prompt Caching으로 API 비용 90% 절감
-- 🤖 **최신 Claude Sonnet 4.5**: 고품질 요약
+- 🤖 **최신 Claude Sonnet 4.6**: 고품질 요약
 - 🌍 **다국어 지원**: 한국어, 영어, 중국어 요약 지원
 - 💻 **CLI 인터페이스**: 명령줄에서 간단하게 사용
 - 🎯 **요약 전용 모드**: 이미 전사된 파일에서 요약만 빠르게 생성
@@ -103,16 +103,19 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 ### 기본 사용법
 
 ```bash
-# 전사만 생성 (언어 자동 감지)
+# 전사만 생성 (영상 정보 + 전사 텍스트)
 ytt "https://youtube.com/watch?v=xxx" ./output
 
-# 전사 + 요약
+# 전사 + 요약 (transcript.json 자동 생성)
 ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 
-# 모델 크기 지정 (tiny/base/small/medium/large)
-ytt "https://youtube.com/watch?v=xxx" ./output -m medium
+# 타임스탬프 파일도 함께 저장
+ytt "https://youtube.com/watch?v=xxx" ./output --timestamps
 
-# 언어 수동 지정 (한국어)
+# JSON + 메타데이터 파일도 함께 저장
+ytt "https://youtube.com/watch?v=xxx" ./output --json --metadata
+
+# 언어 수동 지정 + 요약
 ytt "https://youtube.com/watch?v=xxx" ./output -l ko --summarize
 
 # 영어 영상 + 영어 요약
@@ -124,8 +127,11 @@ ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
 이미 전사가 완료된 디렉토리에서 요약만 생성:
 
 ```bash
-# 먼저 전사만 빠르게 생성 (tiny 모델)
-ytt "URL" ./output -m tiny
+# 먼저 전사 + JSON 저장 (--summarize-only 재사용을 위해 --json 필요)
+ytt "URL" ./output -m tiny --json
+
+# 또는 --summarize로 처음 실행하면 transcript.json 자동 생성됨
+ytt "URL" ./output --summarize
 
 # 나중에 요약만 추가
 ytt ./output --summarize-only -l ko
@@ -138,8 +144,11 @@ ytt --help
 ```
 
 **주요 옵션:**
-- `--summarize, -s`: 요약도 함께 생성
-- `--summarize-only`: 기존 transcript로 요약만 생성
+- `--summarize, -s`: 요약도 함께 생성 (transcript.json 자동 저장)
+- `--summarize-only`: 기존 transcript.json으로 요약만 생성
+- `--timestamps`: 타임스탬프 포함 전사 파일도 저장 (transcript_with_timestamps.txt)
+- `--json`: 구조화된 JSON 파일도 저장 (transcript.json)
+- `--metadata`: 영상 메타데이터 파일도 저장 (metadata.json)
 - `--model-size, -m`: Whisper 모델 크기 (기본값: base)
 - `--language, -l`: 언어 지정 (기본값: auto - 자동 감지)
 - `--no-cleanup`: 임시 파일 삭제하지 않음
@@ -152,14 +161,18 @@ ytt --help
 
 ## 출력 파일
 
+기본 실행 시 `transcript.txt` 하나만 생성됩니다. 나머지는 옵션으로 선택적으로 생성됩니다.
+
 ```
 output/
-├── transcript.txt                    # 평문 전사
-├── transcript_with_timestamps.txt    # 타임스탬프 포함 전사
-├── transcript.json                   # JSON 형식 데이터
-├── metadata.json                     # 영상 메타데이터
-└── summary.txt                       # AI 요약 (--summarize 옵션 시)
+├── transcript.txt                    # 영상 정보 + 전사 텍스트 (항상 생성)
+├── transcript_with_timestamps.txt    # 타임스탬프 포함 전사 (--timestamps)
+├── transcript.json                   # JSON 형식 데이터 (--json 또는 --summarize)
+├── metadata.json                     # 영상 메타데이터 (--metadata)
+└── summary.txt                       # AI 요약 (--summarize)
 ```
+
+`transcript.txt`에는 영상 제목, URL, 업로더, 재생 시간이 헤더로 포함됩니다.
 
 ---
 
@@ -174,12 +187,13 @@ ytt "https://youtube.com/watch?v=lecture123" ./lectures/ai-basics \
     --language ko
 ```
 
-### 2. 영어 팟캐스트 빠른 전사
+### 2. 영어 팟캐스트 전사 (모든 파일 저장)
 
 ```bash
 ytt "https://youtube.com/watch?v=podcast456" ./podcasts/ep01 \
     -m tiny \
-    -l en
+    -l en \
+    --timestamps --json --metadata
 ```
 
 ### 3. 배치 처리 스크립트

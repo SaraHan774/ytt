@@ -235,7 +235,7 @@ class TestDownloadYoutube:
 class TestTranscribeAudio:
     """transcribe_audio 함수 테스트"""
 
-    @patch('ytt.core.get_whisper_model')
+    @patch('ytt.core._load_whisper_model')
     def test_transcribe_audio_single_file(self, mock_get_model, mock_audio_file):
         """단일 오디오 파일 전사"""
         # Mock Whisper 모델
@@ -258,7 +258,7 @@ class TestTranscribeAudio:
         assert len(result[0]['segments']) == 1
         assert result[0]['segments'][0]['text'] == "테스트 전사 결과"
 
-    @patch('ytt.core.get_whisper_model')
+    @patch('ytt.core._load_whisper_model')
     def test_transcribe_audio_multiple_files(self, mock_get_model, mock_audio_files):
         """여러 오디오 파일 전사"""
         mock_segment = Mock()
@@ -317,8 +317,29 @@ class TestSaveTranscripts:
 
         core.save_transcripts(transcripts, output_dir, video_title="테스트 비디오")
 
-        # 파일들이 생성되었는지 확인
+        # 기본 파일 생성 확인
         assert (output_dir / "transcript.txt").exists()
+        # 선택적 파일은 기본적으로 생성되지 않음
+        assert not (output_dir / "transcript_with_timestamps.txt").exists()
+        assert not (output_dir / "transcript.json").exists()
+
+    def test_save_transcripts_optional_files(self, temp_dir):
+        """선택적 파일들이 옵션 활성화 시 생성되는지 확인"""
+        output_dir = Path(temp_dir)
+        transcripts = [
+            {
+                'chunk_id': 0,
+                'segments': [
+                    {'start': 0.0, 'end': 1.0, 'text': '첫 번째 세그먼트'},
+                ]
+            }
+        ]
+
+        core.save_transcripts(
+            transcripts, output_dir, video_title="테스트",
+            save_timestamps=True, save_json=True
+        )
+
         assert (output_dir / "transcript_with_timestamps.txt").exists()
         assert (output_dir / "transcript.json").exists()
 
@@ -334,7 +355,7 @@ class TestSaveTranscripts:
             }
         ]
 
-        core.save_transcripts(transcripts, output_dir, video_title="Test")
+        core.save_transcripts(transcripts, output_dir, video_title="Test", save_json=True)
 
         # 평문 텍스트 확인
         with open(output_dir / "transcript.txt", "r", encoding="utf-8") as f:
@@ -575,7 +596,7 @@ class TestCleanupTempFiles:
 class TestTranscribeSingleChunk:
     """_transcribe_single_chunk 함수 테스트"""
 
-    @patch('ytt.core.get_whisper_model')
+    @patch('ytt.core._load_whisper_model')
     def test_transcribe_single_chunk_success(self, mock_get_model, mock_audio_file):
         """단일 청크 전사 성공"""
         mock_segment = Mock()
@@ -599,7 +620,7 @@ class TestTranscribeSingleChunk:
         assert len(result['segments']) == 1
         assert result['segments'][0]['text'] == "테스트"  # strip 적용됨
 
-    @patch('ytt.core.get_whisper_model')
+    @patch('ytt.core._load_whisper_model')
     def test_transcribe_single_chunk_exception(self, mock_get_model, mock_audio_file):
         """전사 중 예외 발생"""
         mock_model = Mock()
@@ -721,7 +742,7 @@ class TestChunkAudioWrapper:
 class TestTranscribeWithVADConfig:
     """VAD 설정 테스트"""
 
-    @patch('ytt.core.get_whisper_model')
+    @patch('ytt.core._load_whisper_model')
     def test_transcribe_with_custom_vad_config(self, mock_get_model, mock_audio_file):
         """사용자 지정 VAD 설정 전달"""
         mock_segment = Mock()
@@ -752,7 +773,7 @@ class TestTranscribeWithVADConfig:
         call_kwargs = mock_model.transcribe.call_args[1]
         assert call_kwargs['vad_parameters'] == custom_vad
 
-    @patch('ytt.core.get_whisper_model')
+    @patch('ytt.core._load_whisper_model')
     def test_transcribe_with_default_vad(self, mock_get_model, mock_audio_file):
         """VAD 설정 없으면 기본값 사용"""
         mock_segment = Mock()
