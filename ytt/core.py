@@ -5,7 +5,9 @@ Streamlit 의존성 없이 핵심 기능만 제공
 import os
 import shutil
 import logging
+import platform
 import subprocess
+import threading
 from pathlib import Path
 from typing import List, Optional, Dict
 from functools import lru_cache
@@ -19,6 +21,10 @@ from yt_dlp.utils import DownloadError
 from faster_whisper import WhisperModel
 from anthropic import Anthropic
 from dotenv import load_dotenv
+
+# 워커 스레드별로 1회만 Whisper 모델을 로드하기 위한 thread-local 저장소.
+# 이전 구현은 청크마다 새 모델을 생성해 N청크 = N회 로드 비용을 부담했음.
+_whisper_thread_local = threading.local()
 
 # 환경 변수 로드
 load_dotenv()
@@ -56,6 +62,82 @@ def _load_whisper_model(model_size: str = "base") -> "WhisperModel":
         )
 
 
+# ----------------------------------------------------------------------------
+# MLX Whisper 백엔드 (Apple Silicon 전용, Metal GPU 가속)
+# ----------------------------------------------------------------------------
+
+# faster-whisper의 모델 크기 → MLX community HF repo 매핑.
+# "large"는 v3 품질이 가장 좋고 M-series GPU에서도 충분히 빠름.
+_MLX_MODEL_MAP = {
+    "tiny": "mlx-community/whisper-tiny-mlx",
+    "base": "mlx-community/whisper-base-mlx",
+    "small": "mlx-community/whisper-small-mlx",
+    "medium": "mlx-community/whisper-medium-mlx",
+    "large": "mlx-community/whisper-large-v3-mlx",
+}
+
+
+def _is_apple_silicon() -> bool:
+    return platform.system() == "Darwin" and platform.machine() == "arm64"
+
+
+@lru_cache(maxsize=1)
+def _mlx_available() -> bool:
+    """mlx_whisper 패키지가 설치되어 있는지 한 번만 확인."""
+    if not _is_apple_silicon():
+        return False
+    try:
+        import mlx_whisper  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def resolve_backend(preferred: str = "auto") -> str:
+    """사용자 지정 백엔드를 실제 구현체로 매핑. 'auto'는 환경에 따라 선택."""
+    if preferred == "auto":
+        return "mlx" if _mlx_available() else "faster-whisper"
+    if preferred == "mlx" and not _mlx_available():
+        logger.warning("MLX backend requested but not available, falling back to faster-whisper")
+        return "faster-whisper"
+    return preferred
+
+
+def _transcribe_chunk_mlx(args):
+    """MLX Whisper로 단일 청크 전사."""
+    i, audio_file, model_size, language = args
+    try:
+        import mlx_whisper
+        repo = _MLX_MODEL_MAP.get(model_size, _MLX_MODEL_MAP["base"])
+        logger.info(f"Transcribing chunk {i+1} with MLX: {audio_file.name}")
+
+        result = mlx_whisper.transcribe(
+            str(audio_file),
+            path_or_hf_repo=repo,
+            language=language,
+            word_timestamps=False,
+        )
+
+        segments = [
+            {
+                'start': float(seg.get('start', 0.0)),
+                'end': float(seg.get('end', 0.0)),
+                'text': str(seg.get('text', '')).strip(),
+            }
+            for seg in result.get('segments', [])
+        ]
+
+        return {
+            'chunk_id': i,
+            'file': audio_file.name,
+            'language': result.get('language', language or 'unknown'),
+            'segments': segments,
+        }
+    except Exception as e:
+        logger.error(f"MLX transcription failed for {audio_file}: {e}")
+        return None
+
+
 def find_audio_files(path: str, extension: str = ".mp3") -> List[str]:
     """지정된 경로에서 오디오 파일 찾기"""
     audio_files = []
@@ -83,14 +165,11 @@ def download_youtube(youtube_url: str, output_dir: Path, progress_hook=None) -> 
     raw_audio_dir = output_dir / "raw_audio"
     raw_audio_dir.mkdir(parents=True, exist_ok=True)
 
+    # 원본 오디오 스트림을 그대로 저장 (재인코딩 없음).
+    # Whisper/ffmpeg는 m4a/webm/opus를 직접 처리하므로 mp3 변환 과정이 불필요.
     ydl_config = {
-        "format": "bestaudio[abr<=96]/bestaudio/best",
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "96",
-        }],
-        "outtmpl": str(raw_audio_dir / "%(title)s.%(ext)s"),
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
+        "outtmpl": str(raw_audio_dir / "audio.%(ext)s"),
         "quiet": not logger.isEnabledFor(logging.DEBUG),
         "no_warnings": True,
         "progress_hooks": [progress_hook] if progress_hook else [],
@@ -121,12 +200,15 @@ def download_youtube(youtube_url: str, output_dir: Path, progress_hook=None) -> 
                 'uploader': info.get('uploader', 'Unknown'),
             }
 
-            # 다운로드된 파일 찾기
-            audio_files = find_audio_files(str(raw_audio_dir))
-            if not audio_files:
+            # 고정된 outtmpl로 저장된 audio.* 파일 검색
+            audio_candidates = sorted(raw_audio_dir.glob("audio.*"))
+            if not audio_candidates:
+                # 레거시 경로 fallback
+                audio_candidates = [Path(p) for p in find_audio_files(str(raw_audio_dir), ".mp3")]
+            if not audio_candidates:
                 raise ValueError("No audio file found after download")
 
-            audio_path = Path(audio_files[0])
+            audio_path = audio_candidates[0]
 
             logger.info(f"Downloaded: {metadata['title']}")
 
@@ -179,15 +261,20 @@ def chunk_audio_with_ffmpeg(audio_path: Path, output_dir: Path, segment_length: 
 
         logger.info(f"Duration: {duration:.1f}s, creating {num_segments} chunks with ffmpeg")
 
+        # -c copy는 컨테이너 포맷이 원본과 같아야 하므로 입력 확장자를 그대로 사용.
+        # m4a/webm/opus 모두 ffmpeg와 Whisper가 직접 처리 가능.
+        input_ext = audio_path.suffix.lstrip('.') or 'mp3'
+        segment_pattern = chunks_dir / f'segment_%03d.{input_ext}'
+
         # ffmpeg segment muxer로 청킹 (재인코딩 없이 복사만)
         segment_cmd = [
             ffmpeg_path,
             '-i', str(audio_path),
             '-f', 'segment',
             '-segment_time', str(segment_length),
-            '-c', 'copy',  # 핵심: 재인코딩 없음 (zero-copy)
+            '-c', 'copy',
             '-reset_timestamps', '1',
-            str(chunks_dir / 'segment_%03d.mp3')
+            str(segment_pattern)
         ]
 
         subprocess.run(
@@ -197,10 +284,9 @@ def chunk_audio_with_ffmpeg(audio_path: Path, output_dir: Path, segment_length: 
             stderr=subprocess.DEVNULL if not logger.isEnabledFor(logging.DEBUG) else None
         )
 
-        # 생성된 청크 파일 수집
-        chunk_files = sorted(chunks_dir.glob("segment_*.mp3"))
+        chunk_files = sorted(chunks_dir.glob(f"segment_*.{input_ext}"))
 
-        logger.info(f"Created {len(chunk_files)} chunks with ffmpeg (zero-copy)")
+        logger.info(f"Created {len(chunk_files)} chunks with ffmpeg (zero-copy, .{input_ext})")
         return chunk_files
 
     except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
@@ -276,13 +362,24 @@ def chunk_audio(audio_path: Path, output_dir: Path, segment_length: int = 600, f
     return result
 
 
+def _get_thread_local_model(model_size: str) -> "WhisperModel":
+    """워커 스레드당 1회만 Whisper 모델을 로드해 재사용."""
+    cached = getattr(_whisper_thread_local, 'model', None)
+    cached_size = getattr(_whisper_thread_local, 'model_size', None)
+    if cached is not None and cached_size == model_size:
+        return cached
+    model = _load_whisper_model(model_size)
+    _whisper_thread_local.model = model
+    _whisper_thread_local.model_size = model_size
+    return model
+
+
 def _transcribe_single_chunk(args):
     """단일 청크 전사 (병렬 처리용 헬퍼 함수)"""
     i, audio_file, model_size, language, vad_config, beam_size, condition_on_previous_text = args
 
     try:
-        # 스레드마다 독립 모델 인스턴스 사용 (공유 모델의 내부 뮤텍스 경합 방지)
-        model = _load_whisper_model(model_size)
+        model = _get_thread_local_model(model_size)
 
         logger.info(f"Transcribing chunk {i+1}: {audio_file.name}")
 
@@ -330,6 +427,7 @@ def transcribe_audio(
     beam_size: int = 5,
     condition_on_previous_text: bool = True,
     max_workers: Optional[int] = None,
+    backend: str = "auto",
 ) -> List[Dict]:
     """
     오디오 파일들을 병렬로 전사
@@ -339,30 +437,42 @@ def transcribe_audio(
         model_size: Whisper 모델 크기
         language: 언어 코드 (None이면 자동 감지)
         vad_config: VAD 파라미터 (None이면 기본값 사용)
+        backend: 'auto' | 'mlx' | 'faster-whisper'
 
     Returns:
         List[Dict]: 전사 결과 (세그먼트 정보 포함)
     """
-    logger.info(f"Transcribing {len(audio_files)} files with model: {model_size} (parallel mode, beam_size={beam_size})")
+    resolved_backend = resolve_backend(backend)
+    logger.info(
+        f"Transcribing {len(audio_files)} files with model: {model_size} "
+        f"(backend={resolved_backend}, beam_size={beam_size})"
+    )
 
-    # 병렬 처리를 위한 인자 준비
-    tasks = [(i, audio_file, model_size, language, vad_config, beam_size, condition_on_previous_text)
-             for i, audio_file in enumerate(audio_files)]
-
-    transcripts = []
-
-    if not tasks:
+    transcripts: List[Dict] = []
+    if not audio_files:
         return transcripts
 
-    # ThreadPoolExecutor로 병렬 처리
-    if max_workers is None:
-        import os
-        cpu_count = os.cpu_count() or 4
-        max_workers = min(cpu_count, len(audio_files))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # 작업 제출
-        future_to_idx = {executor.submit(_transcribe_single_chunk, task): task[0]
-                         for task in tasks}
+    # MLX는 Metal GPU 단일 리소스라 병렬 워커가 오히려 경합을 일으킴.
+    if resolved_backend == "mlx":
+        worker_fn = _transcribe_chunk_mlx
+        tasks = [(i, audio_file, model_size, language) for i, audio_file in enumerate(audio_files)]
+        effective_workers = 1
+    else:
+        worker_fn = _transcribe_single_chunk
+        tasks = [
+            (i, audio_file, model_size, language, vad_config, beam_size, condition_on_previous_text)
+            for i, audio_file in enumerate(audio_files)
+        ]
+        if max_workers is None:
+            # CTranslate2가 이미 내부 OpenMP 스레드를 쓰므로 워커 수는 코어 수의 절반으로 캡.
+            # 전체 코어에 워커를 할당하면 스레드끼리 동일 코어를 두고 경합해 오히려 느려짐.
+            cpu_count = os.cpu_count() or 4
+            effective_workers = max(1, min(cpu_count // 2, len(audio_files)))
+        else:
+            effective_workers = max_workers
+
+    with ThreadPoolExecutor(max_workers=effective_workers) as executor:
+        future_to_idx = {executor.submit(worker_fn, task): task[0] for task in tasks}
 
         # 완료된 순서대로 결과 수집
         results = {}

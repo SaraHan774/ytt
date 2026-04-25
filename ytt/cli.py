@@ -96,12 +96,18 @@ def setup_logging(verbose: bool):
     help='빠른 전사 모드: beam_size=1, 청크 300초, CPU 풀 활용 (속도 우선, 품질 소폭 저하)'
 )
 @click.option(
+    '--backend',
+    type=click.Choice(['auto', 'mlx', 'faster-whisper']),
+    default='auto',
+    help='전사 백엔드 선택. auto: Apple Silicon에서 mlx-whisper 자동 사용, 나머지는 faster-whisper'
+)
+@click.option(
     '--verbose', '-v',
     is_flag=True,
     help='상세 로그 출력'
 )
-@click.version_option(version='1.3.0', prog_name='ytt')
-def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, save_json, save_metadata, model_size, language, no_cleanup, no_cache, vad_aggressive, force_librosa, fast, verbose):
+@click.version_option(version='1.4.0', prog_name='ytt')
+def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, save_json, save_metadata, model_size, language, no_cleanup, no_cache, vad_aggressive, force_librosa, fast, backend, verbose):
     """
     YouTube Transcript Tool (ytt)
 
@@ -183,8 +189,14 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
     if summarize_only:
         console.print("[bold yellow]📝 요약 전용 모드[/bold yellow]")
     else:
+        resolved_backend = core.resolve_backend(backend)
         console.print(f"[bold]Model:[/bold] {model_size}")
         console.print(f"[bold]Language:[/bold] {language if language != 'auto' else 'auto-detect'}")
+        backend_label = {
+            'mlx': '⚡ MLX (Apple Silicon GPU)',
+            'faster-whisper': 'faster-whisper (CPU/CUDA)',
+        }.get(resolved_backend, resolved_backend)
+        console.print(f"[bold]Backend:[/bold] {backend_label}")
         if fast:
             console.print("[bold magenta]⚡ 빠른 전사 모드 (beam_size=1, 300초 청크)[/bold magenta]")
         if summarize:
@@ -282,6 +294,7 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
                     on_chunk_done=_on_chunk_done,
                     beam_size=beam_size,
                     condition_on_previous_text=not fast,
+                    backend=backend,
                 )
 
                 progress.remove_task(task3)

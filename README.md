@@ -8,8 +8,9 @@ YouTube 영상을 자동으로 전사하고 요약하는 CLI 도구입니다.
 
 - 🆓 **완전 무료 전사**: 로컬 Whisper 모델 사용 (API 비용 없음)
 - 🚀 **GPU 가속**: faster-whisper로 5-10배 빠른 처리
-- ⚡ **극한 최적화**: ffmpeg 청킹으로 메모리 90% 절감, Prompt Caching으로 API 비용 90% 절감
-- 🤖 **최신 Claude Sonnet 4.6**: 고품질 요약
+- 🍎 **Apple Silicon 최적화**: MLX Whisper 백엔드로 Metal GPU 가속 (faster-whisper CPU 대비 8-15배)
+- ⚡ **극한 최적화**: ffmpeg 청킹 + 원본 스트림 저장 + 워커별 모델 1회 로드
+- 🤖 **최신 Claude Sonnet 4.6**: 고품질 요약, Prompt Caching으로 API 비용 90% 절감
 - 🌍 **다국어 지원**: 한국어, 영어, 중국어 요약 지원
 - 💻 **CLI 인터페이스**: 명령줄에서 간단하게 사용
 - 🎯 **요약 전용 모드**: 이미 전사된 파일에서 요약만 빠르게 생성
@@ -56,6 +57,9 @@ cd ytt
 # 패키지 설치
 pip install -r requirements.txt
 pip install -e .
+
+# (선택) Apple Silicon에서 Metal GPU 가속 전사 활성화
+pip install -e '.[mlx]'
 ```
 
 #### 3. 대화형 설정 (권장)
@@ -120,6 +124,9 @@ ytt "https://youtube.com/watch?v=xxx" ./output -l ko --summarize
 
 # 영어 영상 + 영어 요약
 ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
+
+# Apple Silicon에서 MLX 백엔드 명시 (mlx-whisper 설치 필요)
+ytt "https://youtube.com/watch?v=xxx" ./output --backend mlx
 ```
 
 ### 요약 전용 모드

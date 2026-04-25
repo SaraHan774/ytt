@@ -235,6 +235,9 @@ class TestDownloadYoutube:
 class TestTranscribeAudio:
     """transcribe_audio 함수 테스트"""
 
+    def setup_method(self, method):
+        core._whisper_thread_local.__dict__.clear()
+
     @patch('ytt.core._load_whisper_model')
     def test_transcribe_audio_single_file(self, mock_get_model, mock_audio_file):
         """단일 오디오 파일 전사"""
@@ -596,6 +599,10 @@ class TestCleanupTempFiles:
 class TestTranscribeSingleChunk:
     """_transcribe_single_chunk 함수 테스트"""
 
+    def setup_method(self, method):
+        # thread-local 모델 캐시를 테스트 간에 초기화해 mock이 매번 호출되도록 함.
+        core._whisper_thread_local.__dict__.clear()
+
     @patch('ytt.core._load_whisper_model')
     def test_transcribe_single_chunk_success(self, mock_get_model, mock_audio_file):
         """단일 청크 전사 성공"""
@@ -611,7 +618,7 @@ class TestTranscribeSingleChunk:
         mock_model.transcribe.return_value = ([mock_segment], mock_info)
         mock_get_model.return_value = mock_model
 
-        args = (0, Path(mock_audio_file), "base", "ko", None)
+        args = (0, Path(mock_audio_file), "base", "ko", None, 5, True)
         result = core._transcribe_single_chunk(args)
 
         assert result is not None
@@ -627,7 +634,7 @@ class TestTranscribeSingleChunk:
         mock_model.transcribe.side_effect = Exception("Transcription error")
         mock_get_model.return_value = mock_model
 
-        args = (0, Path(mock_audio_file), "base", "ko", None)
+        args = (0, Path(mock_audio_file), "base", "ko", None, 5, True)
         result = core._transcribe_single_chunk(args)
 
         assert result is None
@@ -741,6 +748,9 @@ class TestChunkAudioWrapper:
 
 class TestTranscribeWithVADConfig:
     """VAD 설정 테스트"""
+
+    def setup_method(self, method):
+        core._whisper_thread_local.__dict__.clear()
 
     @patch('ytt.core._load_whisper_model')
     def test_transcribe_with_custom_vad_config(self, mock_get_model, mock_audio_file):

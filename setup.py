@@ -10,7 +10,7 @@ long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists
 
 setup(
     name="ytt",
-    version="1.3.0",
+    version="1.4.0",
     description="YouTube Transcript Tool - AI-powered video transcription with performance optimizations",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -33,6 +33,11 @@ setup(
             "pytest>=7.4.0",
             "pytest-cov>=4.1.0",
             "pytest-mock>=3.12.0",
+        ],
+        # Apple Silicon 전용: Metal GPU 가속 전사 (faster-whisper 대비 8-15배).
+        # 설치: pip install 'ytt[mlx]'
+        "mlx": [
+            "mlx-whisper>=0.3.0",
         ],
     },
     entry_points={
