@@ -139,9 +139,8 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
             # 기본 설정 파일 생성
             config.save_config(config.get_default_config())
 
-    # --summarize 시 transcript.json 자동 생성 (--summarize-only 재사용을 위해)
-    if summarize:
-        save_json = True
+    # --summarize를 주더라도 transcript.json은 --json이 명시된 경우에만 생성.
+    # (재실행을 원한다면 처음 실행 시 --json을 함께 지정)
 
     # 인자 파싱
     if summarize_only:
@@ -170,7 +169,8 @@ def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, 
         transcript_file = output_path / "transcript.json"
         if not transcript_file.exists():
             console.print(f"[bold red]✗ 오류:[/bold red] transcript.json 파일을 찾을 수 없습니다: {transcript_file}")
-            console.print("[dim]먼저 --json 옵션으로 전사를 생성하세요.[/dim]")
+            console.print("[dim]--summarize-only를 사용하려면 처음 실행 시 --json 플래그로 전사를 저장해야 합니다.[/dim]")
+            console.print("[dim]예: ytt <url> <dir> --summarize --json[/dim]")
             exit(1)
     else:
         output_path.mkdir(parents=True, exist_ok=True)

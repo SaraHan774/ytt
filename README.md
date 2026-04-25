@@ -107,10 +107,10 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 ### 기본 사용법
 
 ```bash
-# 전사만 생성 (영상 정보 + 전사 텍스트)
+# 전사만 생성 (transcript.txt 하나만 생성)
 ytt "https://youtube.com/watch?v=xxx" ./output
 
-# 전사 + 요약 (transcript.json 자동 생성)
+# 전사 + 요약 (transcript.txt + summary.txt)
 ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 
 # 타임스탬프 파일도 함께 저장
