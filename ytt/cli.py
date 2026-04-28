@@ -106,7 +106,7 @@ def setup_logging(verbose: bool):
     is_flag=True,
     help='상세 로그 출력'
 )
-@click.version_option(version='1.4.0', prog_name='ytt')
+@click.version_option(version='1.4.1', prog_name='ytt')
 def main(youtube_url_or_dir, output_dir, summarize, summarize_only, timestamps, save_json, save_metadata, model_size, language, no_cleanup, no_cache, vad_aggressive, force_librosa, fast, backend, verbose):
     """
     YouTube Transcript Tool (ytt)

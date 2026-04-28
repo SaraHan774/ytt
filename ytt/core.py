@@ -173,13 +173,9 @@ def download_youtube(youtube_url: str, output_dir: Path, progress_hook=None) -> 
         "quiet": not logger.isEnabledFor(logging.DEBUG),
         "no_warnings": True,
         "progress_hooks": [progress_hook] if progress_hook else [],
-        # Anti-403 settings
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"],
-                "player_skip": ["webpage", "configs"],
-            }
-        },
+        # NOTE: 과거 403 우회 목적으로 player_client를 ["android","web"]로 강제했으나,
+        # YouTube SABR 스트리밍 도입 이후 'Requested format is not available' 오류를 유발해 제거.
+        # yt-dlp 기본 클라이언트 선택 로직이 더 안정적이며, http_headers로 충분한 방어가 된다.
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -277,11 +273,14 @@ def chunk_audio_with_ffmpeg(audio_path: Path, output_dir: Path, segment_length: 
             str(segment_pattern)
         ]
 
+        # capture_output=True는 stdout/stderr 인자와 동시 사용 시 ValueError를 던지므로
+        # 명시적으로 분리해 지정한다. ffmpeg는 정상 진행 로그를 stderr로 흘리므로 비-debug
+        # 모드에서는 둘 다 버리고, debug에선 stderr를 그대로 콘솔에 둔다.
         subprocess.run(
             segment_cmd,
-            capture_output=True,
             check=True,
-            stderr=subprocess.DEVNULL if not logger.isEnabledFor(logging.DEBUG) else None
+            stdout=subprocess.DEVNULL,
+            stderr=None if logger.isEnabledFor(logging.DEBUG) else subprocess.DEVNULL,
         )
 
         chunk_files = sorted(chunks_dir.glob(f"segment_*.{input_ext}"))
