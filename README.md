@@ -7,11 +7,10 @@ YouTube 영상을 자동으로 전사하고 요약하는 CLI 도구입니다.
 ## 주요 특징
 
 - 🆓 **완전 무료 전사**: 로컬 Whisper 모델 사용 (API 비용 없음)
-- 🚀 **GPU 가속**: faster-whisper로 5-10배 빠른 처리
-- 🍎 **Apple Silicon 최적화**: MLX Whisper 백엔드로 Metal GPU 가속 (faster-whisper CPU 대비 8-15배)
-- ⚡ **극한 최적화**: ffmpeg 청킹 + 원본 스트림 저장 + 워커별 모델 1회 로드
-- 🤖 **최신 Claude Sonnet 4.6**: 고품질 요약, Prompt Caching으로 API 비용 90% 절감
-- 🌍 **다국어 지원**: 한국어, 영어, 중국어 요약 지원
+- 🍎 **Apple Silicon GPU 가속**: `mlx-whisper`로 Metal GPU 활용 — 82분 영상 기준 faster-whisper 대비 **6.3배** 빠름 (실측, base 모델 / M1 Max)
+- ⚡ **다층 최적화**: zero-copy ffmpeg 청킹 + 원본 오디오 스트림 저장 + 워커별 모델 1회 로드
+- 🤖 **Claude Sonnet 4.6 요약**: Prompt Caching으로 반복 호출 시 토큰 비용 절감
+- 🌍 **요약 다국어**: 한국어 / 영어 / 중국어 (그 외 언어는 한국어로 폴백)
 - 💻 **CLI 인터페이스**: 명령줄에서 간단하게 사용
 - 🎯 **요약 전용 모드**: 이미 전사된 파일에서 요약만 빠르게 생성
 
@@ -131,38 +130,42 @@ ytt "https://youtube.com/watch?v=xxx" ./output --backend mlx
 
 ### 요약 전용 모드
 
-이미 전사가 완료된 디렉토리에서 요약만 생성:
+이미 전사가 완료된 디렉토리에서 요약만 다시 생성하려면 `transcript.json`이 필요합니다. **`--summarize`만으로는 JSON이 저장되지 않으므로** (v1.4.0 이후), 처음 실행 시 `--json`을 함께 지정해야 재사용 가능합니다.
 
 ```bash
-# 먼저 전사 + JSON 저장 (--summarize-only 재사용을 위해 --json 필요)
-ytt "URL" ./output -m tiny --json
+# 처음 실행 시 transcript.json까지 저장 (재사용 의도)
+ytt "URL" ./output --summarize --json
 
-# 또는 --summarize로 처음 실행하면 transcript.json 자동 생성됨
-ytt "URL" ./output --summarize
-
-# 나중에 요약만 추가
-ytt ./output --summarize-only -l ko
+# 나중에 요약만 다시 (다른 언어, 모델 변경 등)
+ytt ./output --summarize-only -l en
 ```
 
-### 상세 옵션
+### 옵션 일람
 
-```bash
-ytt --help
-```
+가장 정확한 최신 옵션 목록은 항상 `ytt --help`에서 확인하세요. 아래는 v1.4.1 기준.
 
-**주요 옵션:**
-- `--summarize, -s`: 요약도 함께 생성 (transcript.json 자동 저장)
-- `--summarize-only`: 기존 transcript.json으로 요약만 생성
-- `--timestamps`: 타임스탬프 포함 전사 파일도 저장 (transcript_with_timestamps.txt)
-- `--json`: 구조화된 JSON 파일도 저장 (transcript.json)
-- `--metadata`: 영상 메타데이터 파일도 저장 (metadata.json)
-- `--model-size, -m`: Whisper 모델 크기 (기본값: base)
-- `--language, -l`: 언어 지정 (기본값: auto - 자동 감지)
-- `--no-cleanup`: 임시 파일 삭제하지 않음
-- `--no-cache`: 프롬프트 캐싱 비활성화 (요약 시)
-- `--vad-aggressive`: Aggressive VAD 사용 (빠른 전사, 짧은 무음 포함 가능)
-- `--force-librosa`: librosa 청킹 강제 사용 (ffmpeg 비활성화)
-- `--verbose, -v`: 상세 로그 출력
+| 옵션 | 설명 | 기본값 |
+|---|---|---|
+| `--summarize`, `-s` | Claude로 요약 생성 (`summary.txt` 저장) | off |
+| `--summarize-only` | 기존 `transcript.json`으로 요약만 생성 (URL 불필요) | off |
+| `--timestamps` | 타임스탬프 포함 전사 추가 저장 | off |
+| `--json` | 구조화된 JSON(`transcript.json`) 추가 저장. `--summarize-only` 재실행에 필요 | off |
+| `--metadata` | 영상 메타데이터(`metadata.json`) 추가 저장 | off |
+| `--model-size`, `-m` | Whisper 모델 (`tiny`/`base`/`small`/`medium`/`large`) | `base` |
+| `--language`, `-l` | 언어 코드 (`ko`/`en`/`zh`/`auto` 등). 요약은 ko/en/zh만 지원 | `auto` |
+| `--backend` | 전사 백엔드 (`auto`/`mlx`/`faster-whisper`). `auto`는 Apple Silicon에서 mlx 자동 선택 | `auto` |
+| `--fast` | 빠른 모드 (`beam_size=1`, 청크 300초, condition off). MLX 미사용 시 ~1.6배 빠름 | off |
+| `--vad-aggressive` | 더 짧은 무음 임계값(300ms)로 전사 가속. 품질 소폭 영향 | off |
+| `--force-librosa` | ffmpeg 비활성화하고 librosa로 청킹 (디버그용) | off |
+| `--no-cache` | 요약 Prompt Caching 비활성화 | off |
+| `--no-cleanup` | `raw_audio/`, `chunks/` 임시 디렉토리 유지 | off |
+| `--verbose`, `-v` | DEBUG 로그 출력 | off |
+| `--version` | 버전 출력 후 종료 | — |
+
+`--backend` 동작:
+- `auto` (기본): Apple Silicon + `mlx-whisper` 설치 시 → MLX, 그 외 → faster-whisper
+- `mlx`: 강제 MLX (조건 미충족 시 faster-whisper로 자동 폴백, warning 로그)
+- `faster-whisper`: 강제 CPU/CUDA
 
 ---
 
@@ -174,7 +177,7 @@ ytt --help
 output/
 ├── transcript.txt                    # 영상 정보 + 전사 텍스트 (항상 생성)
 ├── transcript_with_timestamps.txt    # 타임스탬프 포함 전사 (--timestamps)
-├── transcript.json                   # JSON 형식 데이터 (--json 또는 --summarize)
+├── transcript.json                   # JSON 형식 데이터 (--json)
 ├── metadata.json                     # 영상 메타데이터 (--metadata)
 └── summary.txt                       # AI 요약 (--summarize)
 ```
@@ -243,122 +246,65 @@ pytest -m integration
 
 ---
 
-## 처리 시간
+## 처리 시간 / 성능
 
-- **tiny 모델**: 약 실시간의 1/10 속도
-- **base 모델**: 약 실시간의 1/5 속도 (권장)
-- **medium 모델**: 약 실시간의 1/3 속도
-- **large 모델**: 약 실시간과 비슷
+### 실측 벤치마크 (M1 Max, base 모델, 82분 40초 영상, v1.4.1)
 
-예시: 16분 영상 → 약 3-4분 (base 모델, GPU 사용 시)
+| Backend | 청킹 | 전사 | 합계 | vs faster-whisper |
+|---|---:|---:|---:|---:|
+| MLX (`--backend mlx`) | 0.7s | 64.1s | **64.8s** | **6.3배 빠름** |
+| faster-whisper (default) | 0.7s | 408.1s | 408.9s | 1.0x |
+| faster-whisper + `--fast` | 0.8s | 248.0s | 248.8s | 1.6배 빠름 |
 
----
+> 참고: MLX 백엔드의 가속 폭은 영상 길이와 모델 크기에 따라 변동합니다. 짧은 영상(10분 이하)에서는 ~2배, 긴 영상(60분 이상)에서는 6~7배 정도가 일반적입니다. 상위 mlx-whisper 프로젝트의 8–15배 카피는 large 모델 또는 다른 하드웨어 기준입니다.
 
-## 🚀 성능 최적화 (v1.1.0+)
+### 핵심 최적화 동작
 
-ytt는 대용량 영상 처리를 위한 다양한 최적화를 제공합니다:
+| 최적화 | 효과 | 활성화 |
+|---|---|---|
+| **MLX 백엔드** (Apple Silicon) | Metal GPU 가속, 6배+ 빠름 | `--backend auto` 또는 `--backend mlx` (`pip install 'ytt[mlx]'` 필요) |
+| **Zero-copy ffmpeg 청킹** | 청킹 시간 ~5배 단축, 메모리 80%↓ | ffmpeg 설치 시 자동 |
+| **Thread-local 모델 캐시** | 워커당 Whisper 모델 1회만 로드 | 자동 |
+| **원본 오디오 스트림** | mp3 재인코딩 생략 (m4a/webm/opus 직접 사용) | 자동 |
+| **Prompt Caching** | Claude 시스템 프롬프트 캐싱 (5분 TTL) | `--summarize` 사용 시 자동, `--no-cache`로 끔 |
+| **`--fast` 모드** | beam=1, 청크 300s, condition off | `--fast` |
+| **Aggressive VAD** | 무음 임계값 500ms → 300ms | `--vad-aggressive` |
 
-### 1. ffmpeg 직접 청킹 (자동 활성화)
-
-**효과**: 메모리 사용량 80-90% 감소, 청킹 속도 60배 향상
-
-**작동 방식**:
-- ffmpeg가 설치되어 있으면 자동으로 사용
-- 재인코딩 없이 복사만 수행 (zero-copy)
-- librosa 대비 메모리 효율 극대화
-
-**설치 확인**:
+긴 영상 처리 권장 조합:
 ```bash
-# ffmpeg 설치 여부 확인
-ffmpeg -version
+# Apple Silicon: MLX 자동 선택, 추가 옵션 거의 불필요
+ytt "URL" ./output --summarize
 
-# macOS에서 설치
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt-get install ffmpeg
-```
-
-**수동 비활성화** (필요시):
-```bash
-# librosa 청킹 강제 사용
-ytt "URL" ./output --force-librosa
-```
-
-### 2. Prompt Caching (자동 활성화)
-
-**효과**: API 비용 90% 절감 (Claude API 사용 시)
-
-**작동 방식**:
-- 시스템 프롬프트가 5분간 캐시됨
-- 2번째 청크부터 캐시 재사용 (토큰 비용 절감)
-- 품질 저하 없음
-
-**수동 비활성화** (필요시):
-```bash
-# 프롬프트 캐싱 비활성화
-ytt "URL" ./output --summarize --no-cache
-```
-
-### 3. Aggressive VAD (선택적)
-
-**효과**: 전사 속도 20-30% 향상
-
-**작동 방식**:
-- 더 짧은 무음 구간에서 스킵 (500ms → 300ms)
-- 빠른 전사, 품질 저하 최소화
-
-**사용 방법**:
-```bash
-# Aggressive VAD 활성화
-ytt "URL" ./output --vad-aggressive
-```
-
-### 성능 벤치마크
-
-**30분 영상 처리 (base 모델, GPU)**
-
-| 최적화 | 처리 시간 | 메모리 | API 비용 |
-|--------|----------|--------|----------|
-| v1.0.x (최적화 전) | 13.9분 | 800MB | $0.80 |
-| v1.1.0 (최적화 후) | 8.3분 | 150MB | $0.08 |
-| **개선율** | **1.7배** | **81%↓** | **90%↓** |
-
-**60분 영상 처리**
-
-| 최적화 | 처리 시간 | 메모리 | API 비용 |
-|--------|----------|--------|----------|
-| v1.0.x | 27.8분 | 1600MB | $1.60 |
-| v1.1.0 | 15.9분 | 180MB | $0.16 |
-| **개선율** | **1.7배** | **89%↓** | **90%↓** |
-
-### 최적 사용 예시
-
-```bash
-# 최대 성능으로 긴 영상 처리
-ytt "https://youtube.com/watch?v=xxx" ./output \
-    --summarize \
-    --vad-aggressive \
-    --model-size base
-
-# 메모리 제한 환경 (ffmpeg 자동 사용)
-ytt "https://youtube.com/watch?v=xxx" ./output
-
-# 비용 절약 (캐싱 자동 활성화)
-ytt "https://youtube.com/watch?v=xxx" ./output --summarize
+# Linux/Intel Mac/CUDA 없는 환경: --fast로 가속
+ytt "URL" ./output --fast --summarize
 ```
 
 ---
 
 ## 문제 해결
 
-### GPU가 감지되지 않음
+### MLX 백엔드를 쓰고 싶은데 faster-whisper로 폴백됨
+
+```bash
+# 설치 확인
+python -c "import mlx_whisper; print('mlx-whisper OK')"
+
+# 미설치면
+pip install 'ytt[mlx]'
+
+# 강제 지정 (Apple Silicon만 가능)
+ytt "URL" ./output --backend mlx
+```
+
+조건: Apple Silicon (M1/M2/M3/M4) + macOS + `mlx-whisper` 설치. 비-Apple Silicon에서 `--backend mlx`를 지정하면 자동으로 faster-whisper로 폴백되며 warning 로그가 남습니다.
+
+### CUDA가 감지되지 않음 (Linux/Windows)
 
 ```bash
 # CUDA 확인
 python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 
-# CPU 강제 실행
+# CPU 강제 실행 (CUDA 환경에서)
 CUDA_VISIBLE_DEVICES="" ytt "URL" ./output
 ```
 
@@ -383,8 +329,11 @@ ytt "URL" ./output -m tiny
 
 ## 상세 문서
 
-- [CLI 사용 가이드](USAGE_CLI.md) - 상세한 사용법과 예시
-- [CLI 디자인](CLI_DESIGN.md) - 아키텍처 및 설계 문서
+- [CHANGELOG.md](CHANGELOG.md) — 버전별 변경사항
+- [CLAUDE.md](CLAUDE.md) — AI 코딩 에이전트용 진입 가이드 (코드 구조, 동작 정확한 설명)
+- [HOMEBREW.md](HOMEBREW.md) — Homebrew 배포 절차
+- [USAGE_CLI.md](USAGE_CLI.md) — 추가 사용 예시 (간소화됨, 옵션 일람은 본 README가 정본)
+- [CLI_DESIGN.md](CLI_DESIGN.md) — 초기 설계 제안서 (역사적 자료, 현 코드와 다를 수 있음)
 
 ---
 

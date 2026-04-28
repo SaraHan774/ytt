@@ -7,11 +7,12 @@ A CLI tool for automatically transcribing and summarizing YouTube videos.
 ## Key Features
 
 - 🆓 **Completely Free Transcription**: Uses local Whisper models (no API costs)
-- 🚀 **GPU Acceleration**: 5-10x faster processing with faster-whisper
-- 🤖 **Latest Claude Sonnet 4.6**: High-quality summarization
-- 🌍 **Multi-language Support**: Korean, English, and Chinese summaries
+- 🍎 **Apple Silicon GPU Acceleration**: `mlx-whisper` on Metal — **6.3x faster** than faster-whisper on long videos (measured: 82-min audio, base model, M1 Max)
+- ⚡ **Layered Optimization**: Zero-copy ffmpeg chunking + raw audio stream + per-worker model load
+- 🤖 **Claude Sonnet 4.6 Summarization**: Prompt Caching reduces token cost on repeat invocations
+- 🌍 **Summary Languages**: Korean / English / Chinese (other languages fall back to Korean)
 - 💻 **CLI Interface**: Simple command-line usage
-- ⚡ **Summary-only Mode**: Quickly regenerate summaries from existing transcripts
+- 🎯 **Summary-only Mode**: Quickly regenerate summaries from existing transcripts
 
 ---
 
@@ -105,7 +106,7 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 # Transcription only (video info + plain text)
 ytt "https://youtube.com/watch?v=xxx" ./output
 
-# Transcription + Summary (auto-saves transcript.json)
+# Transcription + Summary (does NOT auto-save transcript.json since v1.4.0)
 ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 
 # Also save timestamps file
@@ -123,38 +124,42 @@ ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
 
 ### Summary-only Mode
 
-Generate summaries only from already transcribed directories:
+To regenerate summaries from an existing run, you need `transcript.json`. **`--summarize` alone no longer creates it** (since v1.4.0), so you must combine `--summarize --json` on the first run.
 
 ```bash
-# First, transcribe with --json (required for --summarize-only)
-ytt "URL" ./output -m tiny --json
+# First run — keep transcript.json for later reuse
+ytt "URL" ./output --summarize --json
 
-# Or run with --summarize first (transcript.json auto-created)
-ytt "URL" ./output --summarize
-
-# Later, regenerate summary only
-ytt ./output --summarize-only -l ko
+# Later, regenerate summary only (e.g., different language)
+ytt ./output --summarize-only -l en
 ```
 
-### Detailed Options
+### Options
 
-```bash
-ytt --help
-```
+The most accurate option list is always `ytt --help`. The table below reflects v1.4.1.
 
-**Key Options:**
-- `--summarize, -s`: Generate summary along with transcription (auto-saves transcript.json)
-- `--summarize-only`: Generate summary only from existing transcript.json
-- `--timestamps`: Also save transcript with timestamps (transcript_with_timestamps.txt)
-- `--json`: Also save structured JSON (transcript.json)
-- `--metadata`: Also save video metadata (metadata.json)
-- `--model-size, -m`: Whisper model size (default: base)
-- `--language, -l`: Language specification (default: auto - auto-detect)
-- `--no-cleanup`: Don't delete temporary files
-- `--no-cache`: Disable prompt caching (when summarizing)
-- `--vad-aggressive`: Use aggressive VAD (faster transcription)
-- `--force-librosa`: Force librosa chunking (disable ffmpeg)
-- `--verbose, -v`: Verbose logging output
+| Option | Description | Default |
+|---|---|---|
+| `--summarize`, `-s` | Generate Claude summary (`summary.txt`) | off |
+| `--summarize-only` | Re-run summary from existing `transcript.json` (no URL needed) | off |
+| `--timestamps` | Save transcript with timestamps | off |
+| `--json` | Save structured JSON. Required for `--summarize-only` reuse | off |
+| `--metadata` | Save video metadata (`metadata.json`) | off |
+| `--model-size`, `-m` | Whisper model (`tiny`/`base`/`small`/`medium`/`large`) | `base` |
+| `--language`, `-l` | Language code (`ko`/`en`/`zh`/`auto` etc). Summary supports ko/en/zh only | `auto` |
+| `--backend` | Transcription backend (`auto`/`mlx`/`faster-whisper`). `auto` picks mlx on Apple Silicon | `auto` |
+| `--fast` | Fast mode (`beam_size=1`, 300s chunks, condition off). ~1.6x faster on CPU | off |
+| `--vad-aggressive` | Shorter silence threshold (300ms) for faster transcription | off |
+| `--force-librosa` | Disable ffmpeg, use librosa for chunking (debug) | off |
+| `--no-cache` | Disable Prompt Caching for summaries | off |
+| `--no-cleanup` | Keep `raw_audio/` and `chunks/` directories | off |
+| `--verbose`, `-v` | DEBUG log output | off |
+| `--version` | Print version and exit | — |
+
+`--backend` semantics:
+- `auto` (default): MLX on Apple Silicon if `mlx-whisper` is installed, otherwise faster-whisper
+- `mlx`: force MLX (auto-falls back to faster-whisper with a warning if unsupported)
+- `faster-whisper`: force CPU/CUDA path
 
 ---
 
@@ -166,7 +171,7 @@ By default, only `transcript.txt` is created. All other files are optional.
 output/
 ├── transcript.txt                    # Video info + plain transcript (always created)
 ├── transcript_with_timestamps.txt    # Transcript with timestamps (--timestamps)
-├── transcript.json                   # JSON format data (--json or --summarize)
+├── transcript.json                   # JSON format data (--json)
 ├── metadata.json                     # Video metadata (--metadata)
 └── summary.txt                       # AI summary (--summarize)
 ```

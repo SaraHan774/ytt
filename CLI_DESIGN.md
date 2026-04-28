@@ -1,4 +1,13 @@
-# CLI 앱 전환 설계서
+# CLI 앱 전환 설계서 (역사적 자료)
+
+> ⚠️ **주의**: 이 문서는 v1.0.0 이전 단계에서 Streamlit 앱을 CLI로 전환하기 위해 작성된 **초기 설계 제안서**입니다. 코드 예시는 그 시점의 프로토타입이며, 현재 구현과 일치하지 않습니다 (예: `process_audio` → `chunk_audio`, `summarize` → `summarize_with_claude`로 이름이 바뀌었고, MLX 백엔드·thread-local 모델 캐시·zero-copy 청킹 등은 v1.1~v1.4에서 추가됨).
+>
+> 현재 동작에 대한 정확한 정보는:
+> - 옵션 일람 → `ytt --help` 또는 [README.md](README.md)
+> - 코드 가이드 → [CLAUDE.md](CLAUDE.md)
+> - 변경 이력 → [CHANGELOG.md](CHANGELOG.md)
+>
+> 이 문서는 초기 의도와 트레이드오프 결정의 맥락을 보존하기 위해 그대로 유지합니다.
 
 ## 1. 프로젝트 구조
 

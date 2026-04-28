@@ -7,11 +7,12 @@
 ## 主要特性
 
 - 🆓 **完全免费转录**: 使用本地 Whisper 模型（无 API 费用）
-- 🚀 **GPU 加速**: 使用 faster-whisper 处理速度提升 5-10 倍
-- 🤖 **最新 Claude Sonnet 4.6**: 高质量摘要生成
-- 🌍 **多语言支持**: 支持韩语、英语和中文摘要
+- 🍎 **Apple Silicon GPU 加速**: 使用 `mlx-whisper` 通过 Metal — 长视频实测比 faster-whisper 快 **6.3 倍**（base 模型 / M1 Max / 82 分钟视频）
+- ⚡ **多层优化**: zero-copy ffmpeg 切片 + 原始音频流 + 每 worker 仅加载一次模型
+- 🤖 **Claude Sonnet 4.6 摘要**: Prompt Caching 降低重复调用的 token 成本
+- 🌍 **摘要语言**: 韩语 / 英语 / 中文（其他语言自动回退到韩语）
 - 💻 **CLI 界面**: 简单的命令行使用
-- ⚡ **仅摘要模式**: 从现有转录快速重新生成摘要
+- 🎯 **仅摘要模式**: 从现有转录快速重新生成摘要
 
 ---
 
@@ -105,7 +106,7 @@ echo "ANTHROPIC_API_KEY=your-api-key" > .env
 # 仅转录（视频信息 + 纯文本）
 ytt "https://youtube.com/watch?v=xxx" ./output
 
-# 转录 + 摘要（自动保存 transcript.json）
+# 转录 + 摘要（自 v1.4.0 起不再自动保存 transcript.json）
 ytt "https://youtube.com/watch?v=xxx" ./output --summarize
 
 # 同时保存时间戳文件
@@ -123,38 +124,42 @@ ytt "https://youtube.com/watch?v=xxx" ./output -l en --summarize
 
 ### 仅摘要模式
 
-仅从已转录的目录生成摘要：
+要从已有运行中重新生成摘要，需要 `transcript.json` 文件。**自 v1.4.0 起 `--summarize` 不再自动生成它**，因此首次运行时必须同时使用 `--summarize --json`。
 
 ```bash
-# 首先，使用 --json 转录（--summarize-only 需要 transcript.json）
-ytt "URL" ./output -m tiny --json
+# 首次运行 — 保留 transcript.json 以便后续复用
+ytt "URL" ./output --summarize --json
 
-# 或者使用 --summarize 首次运行（自动创建 transcript.json）
-ytt "URL" ./output --summarize
-
-# 稍后，仅重新生成摘要
-ytt ./output --summarize-only -l ko
+# 稍后仅重新生成摘要（例如换语言）
+ytt ./output --summarize-only -l en
 ```
 
-### 详细选项
+### 选项一览
 
-```bash
-ytt --help
-```
+最准确的最新选项列表请运行 `ytt --help`。下表对应 v1.4.1。
 
-**主要选项：**
-- `--summarize, -s`: 转录时一并生成摘要（自动保存 transcript.json）
-- `--summarize-only`: 仅从现有 transcript.json 生成摘要
-- `--timestamps`: 同时保存带时间戳的转录（transcript_with_timestamps.txt）
-- `--json`: 同时保存结构化 JSON（transcript.json）
-- `--metadata`: 同时保存视频元数据（metadata.json）
-- `--model-size, -m`: Whisper 模型大小（默认：base）
-- `--language, -l`: 语言规范（默认：auto - 自动检测）
-- `--no-cleanup`: 不删除临时文件
-- `--no-cache`: 禁用提示缓存（摘要时）
-- `--vad-aggressive`: 使用激进 VAD（更快转录）
-- `--force-librosa`: 强制使用 librosa 分块（禁用 ffmpeg）
-- `--verbose, -v`: 详细日志输出
+| 选项 | 说明 | 默认值 |
+|---|---|---|
+| `--summarize`, `-s` | 使用 Claude 生成摘要（`summary.txt`） | off |
+| `--summarize-only` | 仅基于现有 `transcript.json` 重新生成摘要（无需 URL） | off |
+| `--timestamps` | 额外保存带时间戳的转录 | off |
+| `--json` | 额外保存结构化 JSON（`transcript.json`）。`--summarize-only` 复用所需 | off |
+| `--metadata` | 额外保存视频元数据（`metadata.json`） | off |
+| `--model-size`, `-m` | Whisper 模型（`tiny`/`base`/`small`/`medium`/`large`） | `base` |
+| `--language`, `-l` | 语言代码（`ko`/`en`/`zh`/`auto` 等）。摘要仅支持 ko/en/zh | `auto` |
+| `--backend` | 转录后端（`auto`/`mlx`/`faster-whisper`）。`auto` 在 Apple Silicon 上选择 mlx | `auto` |
+| `--fast` | 快速模式（`beam_size=1`、300 秒分块、condition off）。CPU 上约快 1.6 倍 | off |
+| `--vad-aggressive` | 更短的静音阈值（300ms），提高转录速度 | off |
+| `--force-librosa` | 禁用 ffmpeg，使用 librosa 分块（调试用） | off |
+| `--no-cache` | 禁用摘要的 Prompt Caching | off |
+| `--no-cleanup` | 保留 `raw_audio/` 与 `chunks/` 临时目录 | off |
+| `--verbose`, `-v` | 输出 DEBUG 日志 | off |
+| `--version` | 打印版本后退出 | — |
+
+`--backend` 行为：
+- `auto`（默认）: 安装了 `mlx-whisper` 的 Apple Silicon 上选 MLX，否则选 faster-whisper
+- `mlx`: 强制 MLX（不满足条件时自动回退到 faster-whisper 并输出 warning）
+- `faster-whisper`: 强制 CPU/CUDA 路径
 
 ---
 
@@ -166,7 +171,7 @@ ytt --help
 output/
 ├── transcript.txt                    # 视频信息 + 纯文本转录（始终创建）
 ├── transcript_with_timestamps.txt    # 带时间戳的转录（--timestamps）
-├── transcript.json                   # JSON 格式数据（--json 或 --summarize）
+├── transcript.json                   # JSON 格式数据（--json）
 ├── metadata.json                     # 视频元数据（--metadata）
 └── summary.txt                       # AI 摘要（--summarize）
 ```
