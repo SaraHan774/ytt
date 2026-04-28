@@ -89,3 +89,6 @@ config/api_key.txt
 
 # Internal planning documents
 OPTIMIZATION_ROADMAP.md
+
+# Local clone of homebrew-ytt tap repo (published independently — not tracked here)
+homebrew-ytt/

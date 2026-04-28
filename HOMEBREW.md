@@ -294,47 +294,51 @@ brew untap SaraHan774/ytt
 
 ## GitHub Actions로 자동화
 
-`.github/workflows/release.yml`:
+자동화 워크플로는 이미 `.github/workflows/release.yml`에 구성되어 있습니다. release를 publish하면 다음을 자동 수행합니다:
 
-```yaml
-name: Release
+1. tarball SHA256 계산
+2. `homebrew-ytt` tap 저장소 clone
+3. `Formula/ytt.rb`의 top-level `url` / `sha256` 업데이트 (2-space 인덴트 anchor로 resource 블록은 건드리지 않음)
+4. 커밋 후 push
 
-on:
-  release:
-    types: [published]
+### 사전 요구사항: `TAP_GITHUB_TOKEN` 시크릿
 
-jobs:
-  update-formula:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+워크플로는 `homebrew-ytt` 저장소에 push할 토큰이 필요합니다. **이 시크릿이 없으면 워크플로의 첫 단계에서 명확한 에러 메시지와 함께 실패합니다.**
 
-      - name: Update Homebrew Formula
-        env:
-          GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+설정 절차:
 
-          # tarball SHA256 계산
-          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/v${VERSION}.tar.gz"
-          SHA256=$(curl -sL "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
+1. fine-grained PAT 생성: https://github.com/settings/personal-access-tokens
+   - Repository access: `homebrew-ytt` 선택
+   - Repository permissions → Contents: **Read and write**
+   - 만료일 설정 (예: 1년)
+2. 메인 저장소에 시크릿 등록: `https://github.com/<owner>/ytt/settings/secrets/actions`
+   - Name: `TAP_GITHUB_TOKEN`
+   - Secret: 위에서 생성한 PAT 값
 
-          # Tap 저장소 클론
-          git clone https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository_owner }}/homebrew-ytt.git
-          cd homebrew-ytt
+(classic PAT를 쓴다면 `repo` scope 전체 권한이 필요합니다.)
 
-          # Formula 업데이트
-          sed -i "s|url \".*\"|url \"${TARBALL_URL}\"|g" Formula/ytt.rb
-          sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|g" Formula/ytt.rb
+### 시크릿 미설정 상태 우회
 
-          # 커밋 및 푸시
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/ytt.rb
-          git commit -m "Update to v${VERSION}"
-          git push
+토큰을 등록하기 전에 release를 게시해야 한다면, 수동으로 tap을 업데이트할 수 있습니다:
+
+```bash
+# 1. 새 tarball 다운 + sha256
+TAG=v1.4.1
+URL="https://github.com/SaraHan774/ytt/archive/refs/tags/${TAG}.tar.gz"
+SHA=$(curl -sL "$URL" | shasum -a 256 | awk '{print $1}')
+
+# 2. tap 저장소에서 Formula 업데이트
+cd /path/to/homebrew-ytt
+sed -i '' "s|^  url \".*\"|  url \"${URL}\"|" Formula/ytt.rb
+sed -i '' "s|^  sha256 \".*\"|  sha256 \"${SHA}\"|" Formula/ytt.rb
+
+# 3. 커밋 + 푸시
+git add Formula/ytt.rb
+git commit -m "Update ytt to ${TAG}"
+git push
 ```
+
+(macOS BSD sed는 `-i`에 빈 인자가 필요함. Linux GNU sed는 `sed -i 's|...|'` 그대로 작동.)
 
 ---
 

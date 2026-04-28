@@ -8,6 +8,19 @@ jobs:
   update-homebrew-formula:
     runs-on: ubuntu-latest
     steps:
+      - name: Verify TAP_GITHUB_TOKEN secret is configured
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$TAP_GITHUB_TOKEN" ]; then
+            echo "::error::TAP_GITHUB_TOKEN secret is not set on this repo."
+            echo "Add a fine-grained PAT (or classic PAT with 'repo' scope) at:"
+            echo "  https://github.com/${{ github.repository }}/settings/secrets/actions"
+            echo "The PAT must have write access to ${{ github.repository_owner }}/homebrew-ytt."
+            echo "Without it the tap cannot be auto-updated; you can manually update Formula/ytt.rb in homebrew-ytt as a stop-gap."
+            exit 1
+          fi
+
       - name: Checkout main repo
         uses: actions/checkout@v4
 
@@ -39,9 +52,11 @@ jobs:
           cd homebrew-tap
           TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz"
 
-          # Update URL and SHA256
-          sed -i 's|url ".*"|url "'"$TARBALL_URL"'"|g' Formula/ytt.rb
-          sed -i 's|sha256 ".*"|sha256 "'"${{ steps.sha256.outputs.sha256 }}"'"|g' Formula/ytt.rb
+          # Anchor to top-level fields (2-space indent) so resource entries
+          # (4-space indent inside `resource ... do ... end` blocks) are NOT touched.
+          # Drop the `g` flag — there's only one top-level url/sha256 each.
+          sed -i 's|^  url ".*"|  url "'"$TARBALL_URL"'"|' Formula/ytt.rb
+          sed -i 's|^  sha256 ".*"|  sha256 "'"${{ steps.sha256.outputs.sha256 }}"'"|' Formula/ytt.rb
 
           # Show changes
           git diff Formula/ytt.rb

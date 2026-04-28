@@ -235,8 +235,14 @@ class TestDownloadYoutube:
 class TestTranscribeAudio:
     """transcribe_audio 함수 테스트"""
 
-    def setup_method(self, method):
+    @pytest.fixture(autouse=True)
+    def _isolate(self, monkeypatch):
+        # 워커 스레드 로컬에 남은 모델 캐시 제거
         core._whisper_thread_local.__dict__.clear()
+        # 시스템에 mlx-whisper가 설치되어 있어도 backend=auto가 mlx로 라우팅되지 않도록 강제.
+        # _mlx_available은 lru_cache라 캐시도 비워줘야 함.
+        core._mlx_available.cache_clear()
+        monkeypatch.setattr(core, "_mlx_available", lambda: False)
 
     @patch('ytt.core._load_whisper_model')
     def test_transcribe_audio_single_file(self, mock_get_model, mock_audio_file):
@@ -749,8 +755,11 @@ class TestChunkAudioWrapper:
 class TestTranscribeWithVADConfig:
     """VAD 설정 테스트"""
 
-    def setup_method(self, method):
+    @pytest.fixture(autouse=True)
+    def _isolate(self, monkeypatch):
         core._whisper_thread_local.__dict__.clear()
+        core._mlx_available.cache_clear()
+        monkeypatch.setattr(core, "_mlx_available", lambda: False)
 
     @patch('ytt.core._load_whisper_model')
     def test_transcribe_with_custom_vad_config(self, mock_get_model, mock_audio_file):
