@@ -169,6 +169,28 @@ class TestChunkAudio:
 class TestDownloadYoutube:
     """download_youtube 함수 테스트"""
 
+    @pytest.mark.parametrize("first_version", ["v20.19.0", "invalid", OSError("unavailable")])
+    def test_download_finds_supported_node_later_on_path(self, temp_dir, first_version):
+        output_dir = Path(temp_dir)
+        audio_dir = output_dir / "raw_audio"
+        audio_dir.mkdir()
+        (audio_dir / "audio.m4a").touch()
+        first_result = (
+            first_version if isinstance(first_version, OSError)
+            else Mock(stdout=first_version)
+        )
+
+        with patch.object(core.os, "get_exec_path", return_value=["/old", "/new"]), \
+                patch.object(core.shutil, "which", side_effect=["/old/node", "/new/node"]), \
+                patch.object(core.subprocess, "run", side_effect=[first_result, Mock(stdout="v26.0.0")]), \
+                patch.object(core.yt_dlp, "YoutubeDL") as mock_yt_dlp:
+            mock_yt_dlp.return_value.__enter__.return_value.extract_info.return_value = {}
+            core.download_youtube("https://youtu.be/test", output_dir)
+
+        config = mock_yt_dlp.call_args.args[0]
+        assert config["js_runtimes"] == {"deno": {}, "node": {"path": "/new/node"}}
+        assert config["no_warnings"] is False
+
     @patch('ytt.core.yt_dlp.YoutubeDL')
     @patch('ytt.core.find_audio_files')
     def test_download_youtube_success(self, mock_find_audio, mock_yt_dlp, temp_dir):

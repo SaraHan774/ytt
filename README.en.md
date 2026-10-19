@@ -58,6 +58,14 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+YouTube downloads require Deno (recommended by yt-dlp) or Node.js 22+ on
+your PATH. On macOS, install Deno with `brew install deno`. The package
+includes yt-dlp's JavaScript solver; ytt also detects supported Node.js
+versions on PATH when an older Node installation appears first.
+
+If YouTube returns HTTP 403, update the downloader in the Python environment
+that runs `ytt`: `python -m pip install --upgrade 'yt-dlp[default]'`.
+
 #### 3. Interactive Setup (Recommended)
 
 The interactive setup wizard runs automatically on first `ytt` execution:

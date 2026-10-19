@@ -171,7 +171,7 @@ def download_youtube(youtube_url: str, output_dir: Path, progress_hook=None) -> 
         "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
         "outtmpl": str(raw_audio_dir / "audio.%(ext)s"),
         "quiet": not logger.isEnabledFor(logging.DEBUG),
-        "no_warnings": True,
+        "no_warnings": False,
         "progress_hooks": [progress_hook] if progress_hook else [],
         # NOTE: 과거 403 우회 목적으로 player_client를 ["android","web"]로 강제했으나,
         # YouTube SABR 스트리밍 도입 이후 'Requested format is not available' 오류를 유발해 제거.
@@ -183,6 +183,21 @@ def download_youtube(youtube_url: str, output_dir: Path, progress_hook=None) -> 
             "Sec-Fetch-Mode": "navigate",
         },
     }
+
+    for directory in os.get_exec_path():
+        node_path = shutil.which("node", path=directory)
+        if not node_path:
+            continue
+        try:
+            version = subprocess.run(
+                [node_path, "--version"], capture_output=True, text=True,
+                check=True, timeout=5,
+            ).stdout.strip()
+            if int(version.lstrip("v").split(".")[0]) >= 22:
+                ydl_config["js_runtimes"] = {"deno": {}, "node": {"path": node_path}}
+                break
+        except (OSError, subprocess.SubprocessError, ValueError):
+            continue
 
     try:
         with yt_dlp.YoutubeDL(ydl_config) as ydl:

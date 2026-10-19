@@ -21,7 +21,7 @@ setup(
     install_requires=[
         "faster-whisper>=0.10.0",
         "anthropic>=0.18.0",
-        "yt-dlp>=2024.0.0",
+        "yt-dlp[default]>=2026.8.19",
         "librosa>=0.10.0",
         "soundfile>=0.12.0",
         "click>=8.1.0",
